@@ -73,7 +73,7 @@ def save_to_excel(df, filename):
 initialize_data_files()
 
 # Create Dash app
-app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP], suppress_callback_exceptions=True)
 server = app.server
 
 # Define tabs
@@ -650,7 +650,7 @@ def create_full_leaderboard(users_df):
                     html.Th("Easy"),
                     html.Th("Medium"),
                     html.Th("Hard"),
-                    html.Th("Streak")
+                    # html.Th("Streak") # For displaying streaks
                 ])
             ),
             html.Tbody([
@@ -664,7 +664,7 @@ def create_full_leaderboard(users_df):
                     html.Td(user['Easy Solved']),
                     html.Td(user['Medium Solved']),
                     html.Td(user['Hard Solved']),
-                    html.Td(user.get('current_streak', 0))
+                    #html.Td(user.get('current_streak', 0)) #for streaks
                 ]) for i, (_, user) in enumerate(leaderboard_df.iterrows())
             ])
         ],
@@ -1327,3 +1327,8 @@ def update_download_status(n_clicks):
 
 if __name__ == '__main__':
     app.run(debug=True)
+
+
+
+
+    
