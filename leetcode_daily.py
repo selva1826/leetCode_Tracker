@@ -428,12 +428,10 @@ def debug_leetcode_api(username):
 
 # Run the program
 if __name__ == "__main__":
-    # List of usernames to fetch data for
+    # For standalone execution, still load from file
     def load_usernames(filename="usernames.txt"):
         with open(filename, 'r') as file:
             return [line.strip() for line in file if line.strip()]
 
-
     usernames = load_usernames()
-
     asyncio.run(main(usernames))
