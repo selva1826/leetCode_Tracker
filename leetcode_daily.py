@@ -428,7 +428,7 @@ def debug_leetcode_api(username):
 
 # Run the program
 if __name__ == "__main__":
-    # For standalone execution, still load from file
+    #For standalone execution, still load from file
     def load_usernames(filename="usernames.txt"):
         with open(filename, 'r') as file:
             return [line.strip() for line in file if line.strip()]
