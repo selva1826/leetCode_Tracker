@@ -11,7 +11,7 @@ headers = {
     'referer': 'https://leetcode.com/',
 }
 
-def load_usernames(filename="./data/usernames.txt"):
+def load_usernames(filename="usernames.txt"):
     with open(filename, 'r') as file:
         return [line.strip() for line in file if line.strip()]
 
@@ -75,7 +75,7 @@ def save_to_csv(user_data, filename="./output/leetcode_all_users.csv"):
             writer.writerow(row)
 
 
-def main():
+def main(usernames):
     user_data = []
     print("Fetching data in parallel...")
     with ThreadPoolExecutor(max_workers=10) as executor:
@@ -87,5 +87,13 @@ def main():
     print("✅ CSV saved as leetcode_all_users.csv")
 
 
+
+
 if __name__ == "__main__":
-    main()
+    # For standalone execution, still load from file
+    def load_usernames(filename="usernames.txt"):
+        with open(filename, 'r') as file:
+            return [line.strip() for line in file if line.strip()]
+
+    usernames = load_usernames()
+    main(usernames)
