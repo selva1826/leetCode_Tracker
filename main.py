@@ -203,10 +203,15 @@ tabs = dbc.Tabs([
 
 # App layout
 app.layout = dbc.Container([
+    dbc.Row(dbc.Col(
+        html.Img(src="https://images.careerindia.com/college-photos/5858/eec-logo-finalized_1627136049.png",
+                 style={"height": "100px", "margin": "auto", "display": "block"}))
+    ),
     dbc.Row(dbc.Col(html.H1("LeetCode Dashboard", className="text-center my-4"))),
     dbc.Row(dbc.Col(tabs)),
     html.Div(id="tab-content")
 ], fluid=True)
+
 
 # Leaderboard tab content
 leaderboard_content = dbc.Container([
@@ -301,7 +306,7 @@ def update_top_3_chart(active_tab):
     if active_tab != "leaderboard" or users_df.empty:
         return go.Figure()
 
-    top_3 = users_df.sort_values('Total', ascending=False).head(3)
+    top_3 = users_df.sort_values('Total', ascending=False).head(5)
 
     fig = go.Figure()
     fig.add_trace(go.Bar(
