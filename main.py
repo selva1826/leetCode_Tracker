@@ -494,9 +494,7 @@ def render_tab_content(active_tab, data_loaded, student_data_store):
                 )
             ], width=12)
         ]),
-        dbc.Row([
-            dbc.Col(dcc.Graph(id='daily-participation'), width=12)
-        ]),
+
         dbc.Row([
             dbc.Col(dcc.Graph(id='inactive-students-chart'), width=12)
         ])
@@ -1060,10 +1058,8 @@ def create_user_details_card(user_data, student_info, streak_info, last_week_gro
     return card
 
 
-# Callbacks for activity trends tab
 @app.callback(
-    [Output('daily-participation', 'figure'),
-     Output('inactive-students-chart', 'figure')],
+    [Output('inactive-students-chart', 'figure')],
     [Input('activity-dept-filter', 'value')],
     [State('student-data-store', 'data')]
 )
@@ -1083,68 +1079,14 @@ def update_activity_trends(selected_dept, student_data_store):
 
     if merged_activity.empty:
         empty_fig = go.Figure()
-        return empty_fig, empty_fig
+        return [empty_fig]
 
-    # Create charts
-    daily_chart = create_daily_participation_chart(merged_activity)
+    # Create the inactive students chart
     inactive_chart = create_inactive_students_chart(merged_activity, student_data, selected_dept)
 
-    return daily_chart, inactive_chart
+    return [inactive_chart]
 
 
-def create_daily_participation_chart(activity_df):
-    if activity_df.empty:
-        return go.Figure()
-
-    # Ensure date column is datetime
-    activity_df['date'] = pd.to_datetime(activity_df['date'])
-
-    # Filter last 14 days
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=14)
-
-    filtered_activity = activity_df[(activity_df['date'] >= start_date) &
-                                    (activity_df['date'] <= end_date)]
-
-    if filtered_activity.empty:
-        fig = go.Figure()
-        fig.update_layout(
-            title="No Activity in Last 14 Days",
-            xaxis_title="Date",
-            yaxis_title="Number of Students"
-        )
-        return fig
-
-    # Count daily active users (students who solved at least one problem)
-    daily_active = filtered_activity[filtered_activity['total'] > 0].groupby('date')['username'].nunique().reset_index()
-    daily_active.columns = ['date', 'active_users']
-
-    # Create continuous date range
-    date_range = pd.date_range(start=start_date, end=end_date)
-    date_df = pd.DataFrame({'date': date_range})
-
-    # Merge with active users
-    daily_active = pd.merge(date_df, daily_active, on='date', how='left').fillna(0)
-    daily_active['active_users'] = daily_active['active_users'].astype(int)
-
-    # Create figure
-    fig = go.Figure()
-
-    fig.add_trace(go.Bar(
-        x=daily_active['date'],
-        y=daily_active['active_users'],
-        marker_color='#746AB0',
-        name='Active Students'
-    ))
-
-    fig.update_layout(
-        title="Daily Active Students (Last 14 Days)",
-        xaxis_title="Date",
-        yaxis_title="Number of Students",
-        showlegend=True
-    )
-
-    return fig
 
 
 def create_inactive_students_chart(activity_df, student_data, selected_dept):
@@ -1170,50 +1112,25 @@ def create_inactive_students_chart(activity_df, student_data, selected_dept):
     # Get inactive usernames
     inactive_usernames = all_usernames - active_usernames
 
-    # Count inactive students by department
-    inactive_students = student_data[student_data['username'].isin(inactive_usernames)]
+    # Count active and inactive students
+    active_count = len(active_usernames)
+    inactive_count = len(inactive_usernames)
 
-    if inactive_students.empty:
-        fig = go.Figure()
-        fig.update_layout(
-            title="All Students Active in Last 7 Days",
-            xaxis_title="Department",
-            yaxis_title="Number of Students"
-        )
-        return fig
-
-    inactive_by_dept = inactive_students.groupby('Department').size().reset_index()
-    inactive_by_dept.columns = ['Department', 'Inactive Students']
-
-    # Count total students by department for percentage calculation
-    total_by_dept = student_data.groupby('Department').size().reset_index()
-    total_by_dept.columns = ['Department', 'Total Students']
-
-    # Merge for percentage calculation
-    dept_stats = pd.merge(inactive_by_dept, total_by_dept, on='Department')
-    dept_stats['Inactive Percentage'] = (dept_stats['Inactive Students'] / dept_stats['Total Students'] * 100).round(1)
-
-    # Create figure
-    fig = go.Figure()
-
-    fig.add_trace(go.Bar(
-        x=dept_stats['Department'],
-        y=dept_stats['Inactive Students'],
-        marker_color='#FF6B6B',
-        name='Inactive Students',
-        text=dept_stats['Inactive Percentage'].apply(lambda x: f"{x}%"),
-        textposition='auto'
-    ))
+    # Create pie chart
+    fig = go.Figure(data=[go.Pie(
+        labels=['Active Students', 'Inactive Students'],
+        values=[active_count, inactive_count],
+        hoverinfo='label+percent+value',  # Show label, percent, and raw value on hover
+        textinfo='label+value+percent',  # Show label, raw value, and percentage on the chart
+        marker=dict(colors=['#00B0A1', '#FF6B6B'])
+    )])
 
     fig.update_layout(
-        title="Inactive Students by Department (Last 7 Days)",
-        xaxis_title="Department",
-        yaxis_title="Number of Students",
+        title="Active vs Inactive Students (Last 7 Days)",
         showlegend=True
     )
 
     return fig
-
 
 # Fix for the SettingWithCopyWarning in generate_excel function
 @app.callback(
@@ -1327,8 +1244,3 @@ def update_download_status(n_clicks):
 
 if __name__ == '__main__':
     app.run(debug=True)
-
-
-
-
-    
