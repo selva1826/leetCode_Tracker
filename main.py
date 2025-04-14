@@ -21,7 +21,6 @@ from leetcode_daily import main as run_daily_scraper
 # Ensure output directory exists
 os.makedirs('./output', exist_ok=True)
 
-
 def initialize_data_files():
     """Initialize or clear existing data files"""
     csv_files = ['./output/leetcode_all_users.csv', './output/leetcode_daily_activity.csv']
@@ -31,12 +30,22 @@ def initialize_data_files():
 
         # Create empty files with headers
         if 'all_users' in file:
-            pd.DataFrame(columns=['Username', 'Total', 'EasySolved', 'MediumSolved', 'HardSolved']).to_csv(file,
-                                                                                                           index=False)
+            pd.DataFrame(columns=['Username', 'Total', 'EasySolved', 'MediumSolved', 'HardSolved']).to_csv(file, index=False)
         else:
-            pd.DataFrame(columns=['username', 'date', 'easy', 'medium', 'hard', 'total']).to_csv(file, index=False)
+            pd.DataFrame(columns=['username', 'date', 'easy', 'medium', 'hard', 'total', 'year_range']).to_csv(file, index=False)
 
 
+years = []
+
+def is_year_in_range(year_range, target_year):
+    """Check if target_year falls within the year_range."""
+    try:
+        start_year, end_year = map(int, year_range.split('-'))
+        return start_year <= target_year <= end_year
+    except ValueError:
+        print(f"Invalid year range: {year_range}")
+        return False
+    
 def load_data():
     """Load data with error handling"""
     try:
@@ -45,13 +54,21 @@ def load_data():
 
         # Validate dataframes have required columns
         required_user_cols = ['Username', 'Total', 'EasySolved', 'MediumSolved', 'HardSolved']
-        required_activity_cols = ['username', 'date', 'easy', 'medium', 'hard', 'total']
+        required_activity_cols = ['username', 'date', 'easy', 'medium', 'hard', 'total', 'year_range']
 
         if not all(col in users_df.columns for col in required_user_cols):
             raise ValueError("User data missing required columns")
 
-        if not all(col in activity_df.columns for col in required_activity_cols):
-            raise ValueError("Activity data missing required columns")
+        # Handle missing columns in activity_df
+        for col in required_activity_cols:
+            if col not in activity_df.columns:
+                print(f"Missing column in activity data: {col}. Filling with default value.")
+                if col in ['easy', 'medium', 'hard', 'total']:
+                    activity_df[col] = 0  # Fill numeric columns with 0
+                elif col == 'year_range':
+                    activity_df[col] = '2022-2026'  # Default year range
+                else:
+                    activity_df[col] = None  # Fill non-numeric columns with None
 
         return users_df, activity_df
 
@@ -59,8 +76,9 @@ def load_data():
         print(f"Error loading data: {e}")
         # Return empty dataframes with correct structure
         users_df = pd.DataFrame(columns=['Username', 'Total', 'EasySolved', 'MediumSolved', 'HardSolved'])
-        activity_df = pd.DataFrame(columns=['username', 'date', 'easy', 'medium', 'hard', 'total'])
+        activity_df = pd.DataFrame(columns=['username', 'date', 'easy', 'medium', 'hard', 'total', 'year_range'])
         return users_df, activity_df
+
 
 
 def save_to_excel(df, filename):
@@ -396,9 +414,6 @@ def render_tab_content(active_tab, data_loaded, student_data_store):
     # Define tab contents
     leaderboard_content = dbc.Container([
         dbc.Row([
-            dbc.Col(html.H3("Top Performers", className="text-center mb-4"), width=12)
-        ]),
-        dbc.Row([
             dbc.Col([
                 html.Label("Filter by Department:"),
                 dcc.Dropdown(
@@ -408,7 +423,17 @@ def render_tab_content(active_tab, data_loaded, student_data_store):
                     clearable=False,
                     className="mb-3"
                 )
-            ], width=12)
+            ], width=6),
+            dbc.Col([
+                html.Label("Filter by Year:"),
+                dcc.Dropdown(
+                    id='year-filter',
+                    options=[],
+                    value='All',
+                    clearable=False,
+                    className="mb-3"
+                )
+            ], width=6)
         ]),
         dbc.Row([
             dbc.Col(dcc.Graph(
@@ -537,30 +562,32 @@ def render_tab_content(active_tab, data_loaded, student_data_store):
     return "No tab selected"
 
 
-# Callback for leaderboard department filter
 @app.callback(
     [Output('top-3-chart', 'figure'),
      Output('full-leaderboard', 'children')],
-    [Input('leaderboard-dept-filter', 'value')],
+    [Input('leaderboard-dept-filter', 'value'),
+     Input('year-filter', 'value')],
     [State('student-data-store', 'data')]
 )
-def update_leaderboard(selected_dept, student_data_store):
+def update_leaderboard(selected_dept, selected_year, student_data_store):
     # Load data
     users_df, _ = load_data()
-
-    # Load student data
     student_data = pd.DataFrame(student_data_store.get('student_data', []))
-
-    # Merge data
-    merged_df = pd.merge(users_df, student_data, left_on='Username', right_on='username', how='left')
 
     # Filter by department if needed
     if selected_dept != 'All':
-        merged_df = merged_df[merged_df['Department'] == selected_dept]
+        student_data = student_data[student_data['Department'] == selected_dept]
+
+    # Filter by year if needed
+    if selected_year != 'All':
+        student_data = student_data[student_data['Year'] == selected_year]
+
+    # Merge student data with user performance data
+    merged_df = pd.merge(users_df, student_data, left_on='Username', right_on='username', how='left')
 
     if merged_df.empty:
         empty_fig = go.Figure()
-        empty_table = html.Div("No data available for selected department")
+        empty_table = html.Div("No data available for the selected filters.")
         return empty_fig, empty_table
 
     # Standardize column names
@@ -628,6 +655,21 @@ def create_top_3_chart(users_df):
 
     return fig
 
+@app.callback(
+    Output('year-filter', 'options'),
+    [Input('student-data-store', 'data')]
+)
+def populate_year_options(student_data_store):
+    # Load student data
+    student_data = pd.DataFrame(student_data_store.get('student_data', []))
+
+    # Get unique year ranges
+    unique_years = ['All'] + sorted(student_data['Year'].unique().tolist())
+
+    # Create dropdown options
+    options = [{'label': year, 'value': year} for year in unique_years]
+    return options
+
 
 def create_full_leaderboard(users_df):
     if users_df.empty:
@@ -648,6 +690,7 @@ def create_full_leaderboard(users_df):
                     html.Th("Easy"),
                     html.Th("Medium"),
                     html.Th("Hard"),
+                    html.Th("Year")
                     # html.Th("Streak") # For displaying streaks
                 ])
             ),
@@ -662,6 +705,7 @@ def create_full_leaderboard(users_df):
                     html.Td(user['Easy Solved']),
                     html.Td(user['Medium Solved']),
                     html.Td(user['Hard Solved']),
+                    html.Td(user['Year'])
                     #html.Td(user.get('current_streak', 0)) #for streaks
                 ]) for i, (_, user) in enumerate(leaderboard_df.iterrows())
             ])
