@@ -50,6 +50,14 @@ def is_year_in_range(year_range, target_year):
         print(f"Invalid year range: {year_range}")
         return False
 
+# Add this after line 52
+# Hardcoded credentials
+VALID_USERNAME = "eecleetcode"
+VALID_PASSWORD = "leetcode@eec"
+
+def authenticate_user(username, password):
+    """Validate the username and password."""
+    return username == VALID_USERNAME and password == VALID_PASSWORD
 
 def load_data():
     """Load data with error handling"""
@@ -107,56 +115,40 @@ tabs = dbc.Tabs([
     dbc.Tab(label="Download Datasheet", tab_id="download-datasheet")
 ], id="tabs", active_tab="leaderboard")
 
-# App layout with file upload
-app.layout = dbc.Container([
-    dcc.Store(id='usernames-store'),
-    dcc.Store(id='student-data-store'),
-    dcc.Store(id='data-loaded-flag', data=False),
-    dcc.Store(id='processed-data', data={'ready': False}),  # Store for processed data
 
+
+# Add this after line 108
+login_layout = dbc.Container([
     dbc.Row(dbc.Col(
         html.Img(src="https://images.careerindia.com/college-photos/5858/eec-logo-finalized_1627136049.png",
-                 style={"height": "100px", "margin": "auto", "display": "block"}))
+                style={"height": "100px", "margin": "auto", "display": "block"}))
     ),
-    dbc.Row(dbc.Col(html.H1("LeetCode Dashboard", className="text-center my-4"))),
+    dbc.Row(dbc.Col(html.H1("Login to LeetCode Tracker", className="text-center my-4"))),
+    dbc.Row(dbc.Col(
+        dbc.Input(id="login-username", placeholder="Enter Username", type="text", className="mb-3")
+    )),
+    dbc.Row(dbc.Col(
+        dbc.Input(id="login-password", placeholder="Enter Password", type="password", className="mb-3")
+    )),
+    dbc.Row(dbc.Col(
+        dbc.Button("Login", id="login-button", color="primary", className="mt-3")
+    )),
+    dbc.Row(dbc.Col(
+        dbc.Alert(id="login-alert", color="danger", is_open=False, duration=4000)
+    ))
+])
 
-    # File upload section
-    dbc.Row([
-        dbc.Col([
-            dcc.Upload(
-                id='upload-usernames',
-                children=html.Div([
-                    'Drag and Drop or ',
-                    html.A('Select Student Data CSV File')
-                ]),
-                style={
-                    'width': '100%',
-                    'height': '60px',
-                    'lineHeight': '60px',
-                    'borderWidth': '1px',
-                    'borderStyle': 'dashed',
-                    'borderRadius': '5px',
-                    'textAlign': 'center',
-                    'margin': '10px'
-                },
-                multiple=False
-            ),
-            dbc.Button("Fetch Data", id="fetch-data-btn", color="primary", className="mt-2", disabled=True),
-            dbc.Alert(id='upload-status', color="info", is_open=False, duration=4000),
-            dcc.Loading(
-                id="loading-fetch",
-                type="default",
-                children=html.Div(id="loading-output")
-            )
-        ], width=12)
-    ]),
 
-    dbc.Row(dbc.Col(tabs)),
-    html.Div(id="tab-content"),
 
-    # Download component
-    dcc.Download(id="download-datasheet-excel")
-], fluid=True)
+app.layout = html.Div([
+    # Add the auth-status store here to make it globally accessible
+    dcc.Store(id='auth-status', data=False),
+    
+    # The rest of the layout remains conditional based on login
+    html.Div(id="page-content", children=login_layout)
+])
+
+
 
 
 # Callback to handle file upload
@@ -201,7 +193,6 @@ def handle_upload(contents, filename):
         return dash.no_update, dash.no_update, f"Error reading file: {str(e)}", True, True
 
 
-# Callback to fetch data when button is clicked
 @app.callback(
     [Output('processed-data', 'data'),
      Output('data-loaded-flag', 'data'),
@@ -210,10 +201,15 @@ def handle_upload(contents, filename):
      Output('upload-status', 'color'),
      Output('loading-output', 'children')],
     [Input('fetch-data-btn', 'n_clicks')],
-    [State('usernames-store', 'data')],
+    [State('usernames-store', 'data'),
+     State('auth-status', 'data')],  # Use auth-status to verify authentication
     prevent_initial_call=True
 )
-def fetch_data(n_clicks, usernames_data):
+def secure_fetch_data(n_clicks, usernames_data, auth_status):
+    if not auth_status:
+        # Prevent access if the user is not authenticated
+        raise dash.exceptions.PreventUpdate
+
     if n_clicks is None or usernames_data is None:
         return {'ready': False}, False, dash.no_update, dash.no_update, dash.no_update, ""
 
@@ -1309,6 +1305,78 @@ def update_download_status(n_clicks):
         style={"color": "green", "font-weight": "bold"}
     )
 
+@app.callback(
+    [Output('page-content', 'children'),
+     Output('auth-status', 'data'),  # Update authentication state
+     Output('login-alert', 'children'),
+     Output('login-alert', 'is_open'),
+     Output('login-alert', 'color')],
+    [Input('login-button', 'n_clicks')],
+    [State('login-username', 'value'),
+     State('login-password', 'value')]
+)
+def handle_login(n_clicks, username, password):
+    if n_clicks is None:
+        raise dash.exceptions.PreventUpdate
+
+    if authenticate_user(username, password):
+        # Update page to the main dashboard and set auth-status to True
+        return (
+            dbc.Container([
+                dcc.Store(id='usernames-store'),
+                dcc.Store(id='student-data-store'),
+                dcc.Store(id='data-loaded-flag', data=False),
+                dcc.Store(id='processed-data', data={'ready': False}),  # Store for processed data
+
+                dbc.Row(dbc.Col(
+                    html.Img(src="https://images.careerindia.com/college-photos/5858/eec-logo-finalized_1627136049.png",
+                             style={"height": "100px", "margin": "auto", "display": "block"}))
+                ),
+                dbc.Row(dbc.Col(html.H1("LeetCode Dashboard", className="text-center my-4"))),
+
+                # File upload section
+                dbc.Row([
+                    dbc.Col([
+                        dcc.Upload(
+                            id='upload-usernames',
+                            children=html.Div([
+                                'Drag and Drop or ',
+                                html.A('Select Student Data CSV File')
+                            ]),
+                            style={
+                                'width': '100%',
+                                'height': '60px',
+                                'lineHeight': '60px',
+                                'borderWidth': '1px',
+                                'borderStyle': 'dashed',
+                                'borderRadius': '5px',
+                                'textAlign': 'center',
+                                'margin': '10px'
+                            },
+                            multiple=False
+                        ),
+                        dbc.Button("Fetch Data", id="fetch-data-btn", color="primary", className="mt-2", disabled=True),
+                        dbc.Alert(id='upload-status', color="info", is_open=False, duration=4000),
+                        dcc.Loading(
+                            id="loading-fetch",
+                            type="default",
+                            children=html.Div(id="loading-output")
+                        )
+                    ], width=12)
+                ]),
+
+                dbc.Row(dbc.Col(tabs)),  # Add tabs only after successful login
+                html.Div(id="tab-content"),
+
+                # Download component
+                dcc.Download(id="download-datasheet-excel")
+            ]),
+            True,  
+            "Login successful!", True, "success"
+        )
+    else:
+        return login_layout, False, "Invalid username or password.", True, "danger"
+    
 
 if __name__ == '__main__':
     app.run(debug=True)
