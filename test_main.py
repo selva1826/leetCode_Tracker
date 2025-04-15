@@ -105,19 +105,24 @@ VALID_PASSWORD = "leetcode@eec"
 
 # Final app.layout combining login-state and dynamic page-content switching
 app.layout = dbc.Container([
-    dcc.Store(id='login-state', data={'logged_in': False}),  # Store for login state
-    html.Div(id='page-content')  # Dynamically switch between login and dashboard
+    dcc.Store(id='login-state', data={'logged_in': False}),  # State to track login
+    html.Div(id='page-content')  # Dynamically updated page content
 ], fluid=True)
 
 # Define login layout
 def login_layout():
     return dbc.Container([
-        dbc.Row(dbc.Col(html.H1("Login", className="text-center mt-4 mb-4"))),
+        dbc.Row(dbc.Col(
+            html.Img(src="https://images.careerindia.com/college-photos/5858/eec-logo-finalized_1627136049.png",
+                     style={"height": "100px", "margin": "auto", "display": "block"}))
+        ),
+        dbc.Row(dbc.Col(html.H1("LeetCode Dashboard", className="text-center my-4"))),
         dbc.Row(dbc.Col(dbc.Input(id="username-input", placeholder="Enter your username", type="text"), width=6, className="mb-3")),
         dbc.Row(dbc.Col(dbc.Input(id="password-input", placeholder="Enter your password", type="password"), width=6, className="mb-3")),
         dbc.Row(dbc.Col(dbc.Button("Login", id="login-button", color="primary"), width=6)),
         dbc.Row(dbc.Col(dbc.Alert(id="login-alert", is_open=False, color="danger", className="mt-3")))
     ])
+
 
 # Define dashboard layout
 def dashboard_layout():
@@ -133,54 +138,37 @@ def dashboard_layout():
         ),
         dbc.Row(dbc.Col(html.H1("LeetCode Dashboard", className="text-center my-4"))),
 
-        # File upload section
-        dbc.Row([
-            dbc.Col([
-                dcc.Upload(
-                    id='upload-usernames',
-                    children=html.Div([
-                        'Drag and Drop or ',
-                        html.A('Select Student Data CSV File')
-                    ]),
-                    style={
-                        'width': '100%',
-                        'height': '60px',
-                        'lineHeight': '60px',
-                        'borderWidth': '1px',
-                        'borderStyle': 'dashed',
-                        'borderRadius': '5px',
-                        'textAlign': 'center',
-                        'margin': '10px'
-                    },
-                    multiple=False
-                ),
-                dbc.Button("Fetch Data", id="fetch-data-btn", color="primary", className="mt-2", disabled=True),
-                dbc.Alert(id='upload-status', color="info", is_open=False, duration=4000),
-                dcc.Loading(
-                    id="loading-fetch",
-                    type="default",
-                    children=html.Div(id="loading-output")
-                )
-            ], width=12)
-        ]),
-
-        dbc.Row(dbc.Col(tabs)),
-        html.Div(id="tab-content"),
-
-        # Download component
-        dcc.Download(id="download-datasheet-excel")
+        # Add additional dashboard components here
+        html.Div("Welcome to the LeetCode Dashboard!")  # Placeholder content
     ], fluid=True)
 
+# 5. Verify handle_login callback to ensure proper login-state updates
+@app.callback(
+    [Output('login-state', 'data'),
+     Output('login-alert', 'children'),
+     Output('login-alert', 'is_open')],
+    [Input('login-button', 'n_clicks')],
+    [State('username-input', 'value'),
+     State('password-input', 'value'),
+     State('login-state', 'data')]
+)
+def handle_login(n_clicks, username, password, login_state):
+    if n_clicks:
+        if username == VALID_USERNAME and password == VALID_PASSWORD:
+            login_state['logged_in'] = True
+            return login_state, "", False  # Update login state and hide alert
+        else:
+            return login_state, "Invalid username or password.", True  # Show alert on invalid credentials
+    return dash.no_update, dash.no_update, dash.no_update
 
-# Callback to dynamically render the correct page based on login state
 @app.callback(
     Output('page-content', 'children'),
     [Input('login-state', 'data')]
 )
 def render_page(login_state):
-    if login_state['logged_in']:
-        return dashboard_layout()  # Render dashboard if user is logged in
-    return login_layout()  # Render login page if user is not logged in
+    if login_state and login_state.get('logged_in'):
+        return dashboard_layout()  # Show the dashboard if user is logged in
+    return login_layout()  # Show the login page if not logged in
 
 # Define tabs
 tabs = dbc.Tabs([
