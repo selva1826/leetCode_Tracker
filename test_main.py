@@ -133,11 +133,15 @@ login_layout = dbc.Container([
     ))
 ])
 
-app.layout = html.Div([
-    dcc.Store(id='auth-status', data=False),  # Always include auth-status
-    html.Div(id="page-content", children=login_layout)  # Conditional content
-])
 
+
+app.layout = html.Div([
+    # Add the auth-status store here to make it globally accessible
+    dcc.Store(id='auth-status', data=False),
+    
+    # The rest of the layout remains conditional based on login
+    html.Div(id="page-content", children=login_layout)
+])
 
 
 
