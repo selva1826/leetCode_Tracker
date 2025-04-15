@@ -103,13 +103,13 @@ server = app.server
 VALID_USERNAME = "eecleetcode"
 VALID_PASSWORD = "leetcode@eec"
 
-# Add a dcc.Store to track login state
+# Final app.layout combining login-state and dynamic page-content switching
 app.layout = dbc.Container([
-    dcc.Store(id='login-state', data={'logged_in': False}),
-    html.Div(id='page-content')  # This will dynamically switch between login and dashboard
+    dcc.Store(id='login-state', data={'logged_in': False}),  # Store for login state
+    html.Div(id='page-content')  # Dynamically switch between login and dashboard
 ], fluid=True)
 
-# Define login page layout
+# Define login layout
 def login_layout():
     return dbc.Container([
         dbc.Row(dbc.Col(html.H1("Login", className="text-center mt-4 mb-4"))),
@@ -119,34 +119,68 @@ def login_layout():
         dbc.Row(dbc.Col(dbc.Alert(id="login-alert", is_open=False, color="danger", className="mt-3")))
     ])
 
-# Callback to handle login
-@app.callback(
-    [Output('login-state', 'data'),
-     Output('login-alert', 'children'),
-     Output('login-alert', 'is_open')],
-    [Input('login-button', 'n_clicks')],
-    [State('username-input', 'value'),
-     State('password-input', 'value'),
-     State('login-state', 'data')]
-)
-def handle_login(n_clicks, username, password, login_state):
-    if n_clicks:
-        if username == VALID_USERNAME and password == VALID_PASSWORD:
-            login_state['logged_in'] = True
-            return login_state, "", False
-        else:
-            return login_state, "Invalid username or password.", True
-    return dash.no_update, dash.no_update, dash.no_update
+# Define dashboard layout
+def dashboard_layout():
+    return dbc.Container([
+        dcc.Store(id='usernames-store'),
+        dcc.Store(id='student-data-store'),
+        dcc.Store(id='data-loaded-flag', data=False),
+        dcc.Store(id='processed-data', data={'ready': False}),  # Store for processed data
 
-# Callback to render the correct page based on login state
+        dbc.Row(dbc.Col(
+            html.Img(src="https://images.careerindia.com/college-photos/5858/eec-logo-finalized_1627136049.png",
+                     style={"height": "100px", "margin": "auto", "display": "block"}))
+        ),
+        dbc.Row(dbc.Col(html.H1("LeetCode Dashboard", className="text-center my-4"))),
+
+        # File upload section
+        dbc.Row([
+            dbc.Col([
+                dcc.Upload(
+                    id='upload-usernames',
+                    children=html.Div([
+                        'Drag and Drop or ',
+                        html.A('Select Student Data CSV File')
+                    ]),
+                    style={
+                        'width': '100%',
+                        'height': '60px',
+                        'lineHeight': '60px',
+                        'borderWidth': '1px',
+                        'borderStyle': 'dashed',
+                        'borderRadius': '5px',
+                        'textAlign': 'center',
+                        'margin': '10px'
+                    },
+                    multiple=False
+                ),
+                dbc.Button("Fetch Data", id="fetch-data-btn", color="primary", className="mt-2", disabled=True),
+                dbc.Alert(id='upload-status', color="info", is_open=False, duration=4000),
+                dcc.Loading(
+                    id="loading-fetch",
+                    type="default",
+                    children=html.Div(id="loading-output")
+                )
+            ], width=12)
+        ]),
+
+        dbc.Row(dbc.Col(tabs)),
+        html.Div(id="tab-content"),
+
+        # Download component
+        dcc.Download(id="download-datasheet-excel")
+    ], fluid=True)
+
+
+# Callback to dynamically render the correct page based on login state
 @app.callback(
     Output('page-content', 'children'),
     [Input('login-state', 'data')]
 )
 def render_page(login_state):
     if login_state['logged_in']:
-        return app.layout  # Render the dashboard layout
-    return login_layout()  # Render the login page
+        return dashboard_layout()  # Render dashboard if user is logged in
+    return login_layout()  # Render login page if user is not logged in
 
 # Define tabs
 tabs = dbc.Tabs([
@@ -157,56 +191,7 @@ tabs = dbc.Tabs([
     dbc.Tab(label="Download Datasheet", tab_id="download-datasheet")
 ], id="tabs", active_tab="leaderboard")
 
-# App layout with file upload
-app.layout = dbc.Container([
-    dcc.Store(id='usernames-store'),
-    dcc.Store(id='student-data-store'),
-    dcc.Store(id='data-loaded-flag', data=False),
-    dcc.Store(id='processed-data', data={'ready': False}),  # Store for processed data
 
-    dbc.Row(dbc.Col(
-        html.Img(src="https://images.careerindia.com/college-photos/5858/eec-logo-finalized_1627136049.png",
-                 style={"height": "100px", "margin": "auto", "display": "block"}))
-    ),
-    dbc.Row(dbc.Col(html.H1("LeetCode Dashboard", className="text-center my-4"))),
-
-    # File upload section
-    dbc.Row([
-        dbc.Col([
-            dcc.Upload(
-                id='upload-usernames',
-                children=html.Div([
-                    'Drag and Drop or ',
-                    html.A('Select Student Data CSV File')
-                ]),
-                style={
-                    'width': '100%',
-                    'height': '60px',
-                    'lineHeight': '60px',
-                    'borderWidth': '1px',
-                    'borderStyle': 'dashed',
-                    'borderRadius': '5px',
-                    'textAlign': 'center',
-                    'margin': '10px'
-                },
-                multiple=False
-            ),
-            dbc.Button("Fetch Data", id="fetch-data-btn", color="primary", className="mt-2", disabled=True),
-            dbc.Alert(id='upload-status', color="info", is_open=False, duration=4000),
-            dcc.Loading(
-                id="loading-fetch",
-                type="default",
-                children=html.Div(id="loading-output")
-            )
-        ], width=12)
-    ]),
-
-    dbc.Row(dbc.Col(tabs)),
-    html.Div(id="tab-content"),
-
-    # Download component
-    dcc.Download(id="download-datasheet-excel")
-], fluid=True)
 
 
 # Callback to handle file upload
