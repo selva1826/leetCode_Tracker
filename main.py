@@ -16,7 +16,7 @@ import csv
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from leetcode_total import main as run_total_scraper
-from leetcode_daily import main as run_daily_scraper
+from leetcode_scraper import main as run_scraper
 
 # Ensure output directory exists
 os.makedirs('./output', exist_ok=True)
@@ -50,14 +50,16 @@ def is_year_in_range(year_range, target_year):
         print(f"Invalid year range: {year_range}")
         return False
 
-# Add this after line 52
+
 # Hardcoded credentials
 VALID_USERNAME = "eecleetcode"
 VALID_PASSWORD = "leetcode@eec"
 
+
 def authenticate_user(username, password):
     """Validate the username and password."""
     return username == VALID_USERNAME and password == VALID_PASSWORD
+
 
 def load_data():
     """Load data with error handling"""
@@ -115,13 +117,10 @@ tabs = dbc.Tabs([
     dbc.Tab(label="Download Datasheet", tab_id="download-datasheet")
 ], id="tabs", active_tab="leaderboard")
 
-
-
-# Add this after line 108
 login_layout = dbc.Container([
     dbc.Row(dbc.Col(
         html.Img(src="https://images.careerindia.com/college-photos/5858/eec-logo-finalized_1627136049.png",
-                style={"height": "100px", "margin": "auto", "display": "block"}))
+                 style={"height": "100px", "margin": "auto", "display": "block"}))
     ),
     dbc.Row(dbc.Col(html.H1("Login to LeetCode Tracker", className="text-center my-4"))),
     dbc.Row(dbc.Col(
@@ -138,17 +137,10 @@ login_layout = dbc.Container([
     ))
 ])
 
-
-
 app.layout = html.Div([
-    # Add the auth-status store here to make it globally accessible
     dcc.Store(id='auth-status', data=False),
-    
-    # The rest of the layout remains conditional based on login
     html.Div(id="page-content", children=login_layout)
 ])
-
-
 
 
 # Callback to handle file upload
@@ -169,23 +161,16 @@ def handle_upload(contents, filename):
     decoded = base64.b64decode(content_string)
 
     try:
-        # Read the file content as CSV
         student_data = pd.read_csv(io.StringIO(decoded.decode('utf-8')))
-
-        # Check if required columns exist
         required_cols = ['Register_Number', 'Student_Name', 'username', 'Department']
         if not all(col in student_data.columns for col in required_cols):
             return dash.no_update, dash.no_update, "CSV file missing required columns: Register_Number, Student_Name, username, Department", True, True
 
-        # Extract usernames
         usernames = student_data['username'].tolist()
-
         if not usernames:
             return dash.no_update, dash.no_update, "No usernames found in the file", True, True
 
-        # Store student data
         student_data_dict = student_data.to_dict('records')
-
         return {'usernames': usernames}, {
             'student_data': student_data_dict}, f"Successfully loaded {len(usernames)} students", True, False
 
@@ -202,12 +187,11 @@ def handle_upload(contents, filename):
      Output('loading-output', 'children')],
     [Input('fetch-data-btn', 'n_clicks')],
     [State('usernames-store', 'data'),
-     State('auth-status', 'data')],  # Use auth-status to verify authentication
+     State('auth-status', 'data')],
     prevent_initial_call=True
 )
 def secure_fetch_data(n_clicks, usernames_data, auth_status):
     if not auth_status:
-        # Prevent access if the user is not authenticated
         raise dash.exceptions.PreventUpdate
 
     if n_clicks is None or usernames_data is None:
@@ -218,26 +202,16 @@ def secure_fetch_data(n_clicks, usernames_data, auth_status):
         return {'ready': False}, False, "No usernames to fetch", True, "danger", ""
 
     try:
-        # Initialize data files
         initialize_data_files()
-
-        # Run scrapers
         print("Running LeetCode total scraper...")
         run_total_scraper(usernames)
-
         print("Running LeetCode daily scraper...")
-        asyncio.run(run_daily_scraper(usernames))
-
-        # Load and process the data
+        asyncio.run(run_scraper(usernames, days=7, output_file="./output/leetcode_daily_activity.csv"))
         users_df, activity_df = load_data()
 
-        # Process data for storage
         if not users_df.empty and not activity_df.empty:
-            # Calculate streaks and additional metrics
             processed_data = process_data(users_df, activity_df)
-
-            return {'ready': True,
-                    'timestamp': datetime.now().isoformat()}, True, "Data fetched and processed successfully!", True, "success", ""
+            return {'ready': True, 'timestamp': datetime.now().isoformat()}, True, "Data fetched and processed successfully!", True, "success", ""
         else:
             return {'ready': False}, False, "No data returned from scrapers", True, "warning", ""
 
@@ -245,44 +219,33 @@ def secure_fetch_data(n_clicks, usernames_data, auth_status):
         print(f"Error in fetch_data: {e}")
         return {'ready': False}, False, f"Error fetching data: {str(e)}", True, "danger", ""
 
-
 def process_data(users_df, activity_df):
     """Process the data for metrics and analysis"""
     try:
-        # Ensure proper data types
         activity_df['date'] = pd.to_datetime(activity_df['date'], errors='coerce')
         users_df['HardSolved'] = users_df['HardSolved'].fillna(0).astype(int)
         users_df['MediumSolved'] = users_df['MediumSolved'].fillna(0).astype(int)
         users_df['EasySolved'] = users_df['EasySolved'].fillna(0).astype(int)
         users_df['Total'] = users_df['Total'].fillna(0).astype(int)
 
-        # Standardize column names
         users_df = users_df.rename(columns={
             'EasySolved': 'Easy Solved',
             'MediumSolved': 'Medium Solved',
             'HardSolved': 'Hard Solved'
         })
 
-        # Calculate totals if not present
         if 'Total' not in users_df.columns:
             users_df['Total'] = users_df['Easy Solved'] + users_df['Medium Solved'] + users_df['Hard Solved']
 
-        # Calculate difficulty-wise averages
         difficulty_avg = users_df[['Easy Solved', 'Medium Solved', 'Hard Solved']].mean().reset_index()
         difficulty_avg.columns = ['Difficulty', 'Average Solved']
 
-        return {
-            'processed': True
-        }
+        return {'processed': True}
     except Exception as e:
         print(f"Error processing data: {e}")
-        return {
-            'processed': False,
-            'error': str(e)
-        }
+        return {'processed': False, 'error': str(e)}
 
 
-# Callback to switch tabs
 @app.callback(
     Output("tab-content", "children"),
     [Input("tabs", "active_tab"),
@@ -294,10 +257,7 @@ def render_tab_content(active_tab, data_loaded, student_data_store):
         return dbc.Alert("Please upload a student data CSV file and click 'Fetch Data' to load the dashboard.",
                          color="info")
 
-    # Load the data
     users_df, activity_df = load_data()
-
-    # Load student data - create copy to prevent warnings
     student_data = pd.DataFrame(student_data_store.get('student_data', [])).copy()
 
     ctx = callback_context
@@ -305,40 +265,30 @@ def render_tab_content(active_tab, data_loaded, student_data_store):
         return dbc.Alert("Please upload a student data CSV file and click 'Fetch Data' to load the dashboard.",
                          color="info")
 
-    # Data preprocessing
     try:
-        # Create copies to avoid SettingWithCopyWarning
         activity_df = activity_df.copy()
         users_df = users_df.copy()
-
         activity_df['date'] = pd.to_datetime(activity_df['date'], errors='coerce')
 
-        # Handle missing columns
         for col in ['easy', 'medium', 'hard', 'total']:
             if col not in activity_df.columns:
                 activity_df[col] = 0
 
-        # Standardize column names
         users_df = users_df.rename(columns={
             'EasySolved': 'Easy Solved',
             'MediumSolved': 'Medium Solved',
             'HardSolved': 'Hard Solved'
         })
 
-        # Calculate totals if not present
         if 'Total' not in users_df.columns:
             users_df['Total'] = users_df['Easy Solved'] + users_df['Medium Solved'] + users_df['Hard Solved']
 
-        # Merge user data with student info
         merged_df = pd.merge(users_df, student_data, left_on='Username', right_on='username', how='left')
     except Exception as e:
         print(f"Error during data preprocessing: {e}")
         return dbc.Alert(f"Error processing data: {str(e)}", color="danger")
 
-    # Calculate streaks and last active date
     current_date = datetime.now()
-
-    # Ensure total column exists
     if 'total' not in activity_df.columns:
         activity_df['total'] = activity_df['easy'] + activity_df['medium'] + activity_df['hard']
 
@@ -364,7 +314,6 @@ def render_tab_content(active_tab, data_loaded, student_data_store):
             else:
                 break
 
-        # Calculate longest streak
         prev_date = None
         for date in sorted(dates, reverse=True):
             if prev_date is None:
@@ -384,34 +333,25 @@ def render_tab_content(active_tab, data_loaded, student_data_store):
             'last_active': last_active.strftime('%Y-%m-%d') if pd.notna(last_active) else 'Never'
         }
 
-    # Add streak info to users_df
-    streak_data = []
-    for user in users_df['Username']:
-        streak_data.append(calculate_streak(user))
-
+    streak_data = [calculate_streak(user) for user in users_df['Username']]
     streak_df = pd.DataFrame(streak_data)
     merged_df = pd.concat([merged_df, streak_df], axis=1)
 
-    # Calculate growth in last week
     last_week_date = current_date - timedelta(days=7)
     last_week_activity = activity_df[activity_df['date'] >= pd.to_datetime(last_week_date)]
     last_week_growth = last_week_activity.groupby('username')['total'].sum().reset_index()
     last_week_growth.columns = ['Username', 'Last Week Growth']
     merged_df = merged_df.merge(last_week_growth, on='Username', how='left').fillna(0)
 
-    # Calculate inactive students (>7 days)
     merged_df['days_since_last_active'] = (
             current_date - pd.to_datetime(merged_df['last_active'], format='%Y-%m-%d', errors='coerce')).dt.days
     merged_df['is_inactive'] = merged_df['days_since_last_active'] > 7
 
-    # Calculate difficulty-wise averages
     difficulty_avg = merged_df[['Easy Solved', 'Medium Solved', 'Hard Solved']].mean().reset_index()
     difficulty_avg.columns = ['Difficulty', 'Average Solved']
 
-    # Get list of departments
     departments = ['All'] + sorted(student_data['Department'].unique().tolist())
 
-    # Define tab contents
     leaderboard_content = dbc.Container([
         dbc.Row([
             dbc.Col([
@@ -436,9 +376,7 @@ def render_tab_content(active_tab, data_loaded, student_data_store):
             ], width=6)
         ]),
         dbc.Row([
-            dbc.Col(dcc.Graph(
-                id='top-3-chart'
-            ), width=12)
+            dbc.Col(dcc.Graph(id='top-3-chart'), width=12)
         ]),
         dbc.Row([
             dbc.Col(html.H4("Full Leaderboard", className="text-center mt-4"), width=12)
@@ -519,7 +457,6 @@ def render_tab_content(active_tab, data_loaded, student_data_store):
                 )
             ], width=12)
         ]),
-
         dbc.Row([
             dbc.Col(dcc.Graph(id='inactive-students-chart'), width=12)
         ])
@@ -543,7 +480,10 @@ def render_tab_content(active_tab, data_loaded, student_data_store):
         ]),
         dbc.Row([
             dbc.Col([
-                dbc.Button("Download Past 7 Days Activity Data", id="download-btn", color="success", className="mt-4"),
+                dbc.Button("Download Past 7 Days Activity Data", id="download-btn", color="success",
+                           className="mt-2 mr-2"),
+                dbc.Button("Download Past Month Activity Data", id="download-month-btn", color="success",
+                           className="mt-2"),
                 html.Div(id="download-status", className="mt-3")
             ], width={"size": 6, "offset": 3}, className="text-center")
         ])
@@ -570,27 +510,17 @@ def render_tab_content(active_tab, data_loaded, student_data_store):
     [State('student-data-store', 'data')]
 )
 def update_leaderboard(selected_dept, selected_year, student_data_store):
-    # Load data
     users_df, _ = load_data()
     student_data = pd.DataFrame(student_data_store.get('student_data', []))
-
-    # Create a filtered copy of the student data
     filtered_student_data = student_data.copy()
 
-    # Filter by department if needed
     if selected_dept != 'All':
         filtered_student_data = filtered_student_data[filtered_student_data['Department'] == selected_dept]
 
-    # Filter by year if needed
-    if selected_year != 'All':
-        # Make sure 'Year' column exists before filtering
-        if 'Year' in filtered_student_data.columns:
-            filtered_student_data = filtered_student_data[filtered_student_data['Year'] == selected_year]
+    if selected_year != 'All' and 'Year' in filtered_student_data.columns:
+        filtered_student_data = filtered_student_data[filtered_student_data['Year'] == selected_year]
 
-    # Get usernames after filtering
     filtered_usernames = filtered_student_data['username'].unique()
-
-    # Merge with users data - only keep users whose usernames are in the filtered list
     merged_df = pd.merge(
         users_df[users_df['Username'].isin(filtered_usernames)],
         filtered_student_data,
@@ -604,19 +534,14 @@ def update_leaderboard(selected_dept, selected_year, student_data_store):
         empty_table = html.Div("No data available for the selected filters.")
         return empty_fig, empty_table
 
-    # Standardize column names
     merged_df = merged_df.rename(columns={
         'EasySolved': 'Easy Solved',
         'MediumSolved': 'Medium Solved',
         'HardSolved': 'Hard Solved'
     })
 
-    # Create top 3 chart
     top_3_fig = create_top_3_chart(merged_df)
-
-    # Create full leaderboard
     leaderboard_table = create_full_leaderboard(merged_df)
-
     return top_3_fig, leaderboard_table
 
 
@@ -626,7 +551,6 @@ def create_top_3_chart(users_df):
 
     top_3 = users_df.sort_values('Total', ascending=False).head(3)
     if len(top_3) < 3:
-        # Pad with dummy data if less than 3 users
         while len(top_3) < 3:
             top_3 = pd.concat([top_3, pd.DataFrame([{
                 'Username': f'User {len(top_3) + 1}',
@@ -666,7 +590,6 @@ def create_top_3_chart(users_df):
                'categoryarray': [top_3.iloc[1]['Student_Name'], top_3.iloc[0]['Student_Name'],
                                  top_3.iloc[2]['Student_Name']]}
     )
-
     return fig
 
 
@@ -674,20 +597,13 @@ def create_top_3_chart(users_df):
     Output('year-filter', 'options'),
     [Input('student-data-store', 'data')]
 )
-
 def populate_year_options(student_data_store):
-    # Load student data
     student_data = pd.DataFrame(student_data_store.get('student_data', []))
-
-    # Check if Year column exists
     if 'Year' not in student_data.columns:
         print("Warning: 'Year' column not found in student data")
         return [{'label': 'All', 'value': 'All'}]
 
-    # Get unique year ranges
     unique_years = ['All'] + sorted(student_data['Year'].unique().tolist())
-
-    # Create dropdown options
     options = [{'label': year, 'value': year} for year in unique_years]
     return options
 
@@ -697,7 +613,6 @@ def create_full_leaderboard(users_df):
         return html.Div("No data available")
 
     leaderboard_df = users_df.sort_values('Total', ascending=False)
-
     table = dbc.Table(
         [
             html.Thead(
@@ -712,7 +627,6 @@ def create_full_leaderboard(users_df):
                     html.Th("Medium"),
                     html.Th("Hard"),
                     html.Th("Year")
-                    # html.Th("Streak") # For displaying streaks
                 ])
             ),
             html.Tbody([
@@ -727,7 +641,6 @@ def create_full_leaderboard(users_df):
                     html.Td(user['Medium Solved']),
                     html.Td(user['Hard Solved']),
                     html.Td(user['Year'])
-                    # html.Td(user.get('current_streak', 0)) #for streaks
                 ]) for i, (_, user) in enumerate(leaderboard_df.iterrows())
             ])
         ],
@@ -736,11 +649,9 @@ def create_full_leaderboard(users_df):
         responsive=True,
         striped=True,
     )
-
     return table
 
 
-# Callbacks for difficulty analysis tab
 @app.callback(
     [Output('difficulty-avg-chart', 'figure'),
      Output('difficulty-distribution', 'figure'),
@@ -749,16 +660,10 @@ def create_full_leaderboard(users_df):
     [State('student-data-store', 'data')]
 )
 def update_difficulty_analysis(selected_dept, student_data_store):
-    # Load data
     users_df, _ = load_data()
-
-    # Load student data
     student_data = pd.DataFrame(student_data_store.get('student_data', []))
-
-    # Merge data
     merged_df = pd.merge(users_df, student_data, left_on='Username', right_on='username', how='left')
 
-    # Filter by department if needed
     if selected_dept != 'All':
         merged_df = merged_df[merged_df['Department'] == selected_dept]
 
@@ -766,22 +671,18 @@ def update_difficulty_analysis(selected_dept, student_data_store):
         empty_fig = go.Figure()
         return empty_fig, empty_fig, empty_fig
 
-    # Standardize column names
     merged_df = merged_df.rename(columns={
         'EasySolved': 'Easy Solved',
         'MediumSolved': 'Medium Solved',
         'HardSolved': 'Hard Solved'
     })
 
-    # Calculate difficulty-wise averages
     difficulty_avg = merged_df[['Easy Solved', 'Medium Solved', 'Hard Solved']].mean().reset_index()
     difficulty_avg.columns = ['Difficulty', 'Average Solved']
 
-    # Create charts
     avg_chart = create_difficulty_avg_chart(difficulty_avg)
     dist_chart = create_difficulty_distribution(merged_df)
     hard_solvers_chart = create_hard_solvers_chart(merged_df)
-
     return avg_chart, dist_chart, hard_solvers_chart
 
 
@@ -797,14 +698,12 @@ def create_difficulty_avg_chart(difficulty_avg):
         text=difficulty_avg['Average Solved'].round(1),
         textposition='auto'
     ))
-
     fig.update_layout(
         title='Average Problems Solved by Difficulty',
         xaxis_title='Difficulty',
         yaxis_title='Average Solved',
         showlegend=False
     )
-
     return fig
 
 
@@ -813,31 +712,14 @@ def create_difficulty_distribution(users_df):
         return go.Figure()
 
     fig = go.Figure()
-
-    fig.add_trace(go.Box(
-        y=users_df['Easy Solved'],
-        name='Easy',
-        marker_color='#00B0A1'
-    ))
-
-    fig.add_trace(go.Box(
-        y=users_df['Medium Solved'],
-        name='Medium',
-        marker_color='#FFC154'
-    ))
-
-    fig.add_trace(go.Box(
-        y=users_df['Hard Solved'],
-        name='Hard',
-        marker_color='#FF6B6B'
-    ))
-
+    fig.add_trace(go.Box(y=users_df['Easy Solved'], name='Easy', marker_color='#00B0A1'))
+    fig.add_trace(go.Box(y=users_df['Medium Solved'], name='Medium', marker_color='#FFC154'))
+    fig.add_trace(go.Box(y=users_df['Hard Solved'], name='Hard', marker_color='#FF6B6B'))
     fig.update_layout(
         title='Distribution of Problems Solved by Difficulty',
         yaxis_title='Problems Solved',
         boxmode='group'
     )
-
     return fig
 
 
@@ -846,7 +728,6 @@ def create_hard_solvers_chart(users_df):
         return go.Figure()
 
     top_hard_solvers = users_df.sort_values('Hard Solved', ascending=False).head(10)
-
     fig = go.Figure()
     fig.add_trace(go.Bar(
         x=top_hard_solvers['Student_Name'],
@@ -855,35 +736,27 @@ def create_hard_solvers_chart(users_df):
         text=top_hard_solvers['Hard Solved'],
         textposition='auto'
     ))
-
     fig.update_layout(
         title='Top 10 Hard Problem Solvers',
         xaxis_title='Student Name',
         yaxis_title='Hard Problems Solved',
         showlegend=False
     )
-
     return fig
 
 
-# Callbacks for user performance tab
 @app.callback(
     Output('student-selector', 'options'),
     [Input('performance-dept-filter', 'value')],
     [State('student-data-store', 'data')]
 )
 def update_student_dropdown(selected_dept, student_data_store):
-    # Load student data
     student_data = pd.DataFrame(student_data_store.get('student_data', []))
-
-    # Filter by department if needed
     if selected_dept != 'All':
         student_data = student_data[student_data['Department'] == selected_dept]
 
-    # Create options with student names
     options = [{'label': f"{row['Student_Name']} ({row['Register_Number']})", 'value': row['username']}
                for _, row in student_data.iterrows()]
-
     return options
 
 
@@ -900,17 +773,10 @@ def update_user_performance(selected_username, student_data_store):
         empty_card = html.Div("Please select a student")
         return empty_fig, empty_fig, empty_card
 
-    # Load data
     users_df, activity_df = load_data()
-
-    # Load student data
     student_data = pd.DataFrame(student_data_store.get('student_data', []))
-
-    # Filter for selected user
     user_data = users_df[users_df['Username'] == selected_username]
     user_activity = activity_df[activity_df['username'] == selected_username]
-
-    # Get student info
     student_info = student_data[student_data['username'] == selected_username]
 
     if user_data.empty or student_info.empty:
@@ -918,18 +784,15 @@ def update_user_performance(selected_username, student_data_store):
         empty_card = html.Div("No data available for selected student")
         return empty_fig, empty_fig, empty_card
 
-    # Standardize column names
     user_data = user_data.rename(columns={
         'EasySolved': 'Easy Solved',
         'MediumSolved': 'Medium Solved',
         'HardSolved': 'Hard Solved'
     })
 
-    # Create charts
     problems_chart = create_user_problems_chart(user_data)
     activity_chart = create_user_activity_chart(user_activity)
 
-    # Calculate streak and other metrics for this user
     current_date = datetime.now()
 
     def calculate_user_streak(activity_df):
@@ -938,7 +801,6 @@ def update_user_performance(selected_username, student_data_store):
 
         activity_df = activity_df.sort_values('date', ascending=False)
         activity_with_problems = activity_df[activity_df['total'] > 0]
-
         if activity_with_problems.empty:
             return {'current_streak': 0, 'longest_streak': 0, 'last_active': 'Never'}
 
@@ -955,7 +817,6 @@ def update_user_performance(selected_username, student_data_store):
             else:
                 break
 
-        # Calculate longest streak
         prev_date = None
         for date in sorted(dates, reverse=True):
             if prev_date is None:
@@ -976,15 +837,10 @@ def update_user_performance(selected_username, student_data_store):
         }
 
     streak_info = calculate_user_streak(user_activity)
-
-    # Last week growth
     last_week_date = current_date - timedelta(days=7)
     last_week_activity = user_activity[user_activity['date'] >= pd.to_datetime(last_week_date)]
     last_week_growth = last_week_activity['total'].sum()
-
-    # Create user details card
     user_details_card = create_user_details_card(user_data, student_info, streak_info, last_week_growth)
-
     return problems_chart, activity_chart, user_details_card
 
 
@@ -992,12 +848,9 @@ def create_user_problems_chart(user_data):
     if user_data.empty:
         return go.Figure()
 
-    # Prepare data
     categories = ['Easy Solved', 'Medium Solved', 'Hard Solved']
     values = [user_data[cat].values[0] for cat in categories]
     colors = ['#00B0A1', '#FFC154', '#FF6B6B']
-
-    # Create figure
     fig = go.Figure()
     fig.add_trace(go.Bar(
         x=categories,
@@ -1006,14 +859,12 @@ def create_user_problems_chart(user_data):
         text=values,
         textposition='auto'
     ))
-
     fig.update_layout(
         title=f"Problems Solved by {user_data['Username'].values[0]}",
         xaxis_title='Difficulty',
         yaxis_title='Problems Solved',
         showlegend=False
     )
-
     return fig
 
 
@@ -1027,16 +878,10 @@ def create_user_activity_chart(user_activity):
         )
         return fig
 
-    # Ensure date column is datetime
     user_activity['date'] = pd.to_datetime(user_activity['date'])
-
-    # Get last 30 days of activity
     end_date = datetime.now()
     start_date = end_date - timedelta(days=30)
-
-    # Filter and sort by date
-    filtered_activity = user_activity[(user_activity['date'] >= start_date) &
-                                      (user_activity['date'] <= end_date)]
+    filtered_activity = user_activity[(user_activity['date'] >= start_date) & (user_activity['date'] <= end_date)]
     filtered_activity = filtered_activity.sort_values('date')
 
     if filtered_activity.empty:
@@ -1048,9 +893,7 @@ def create_user_activity_chart(user_activity):
         )
         return fig
 
-    # Create figure
     fig = go.Figure()
-
     fig.add_trace(go.Scatter(
         x=filtered_activity['date'],
         y=filtered_activity['easy'],
@@ -1058,7 +901,6 @@ def create_user_activity_chart(user_activity):
         mode='lines+markers',
         marker_color='#00B0A1'
     ))
-
     fig.add_trace(go.Scatter(
         x=filtered_activity['date'],
         y=filtered_activity['medium'],
@@ -1066,7 +908,6 @@ def create_user_activity_chart(user_activity):
         mode='lines+markers',
         marker_color='#FFC154'
     ))
-
     fig.add_trace(go.Scatter(
         x=filtered_activity['date'],
         y=filtered_activity['hard'],
@@ -1074,7 +915,6 @@ def create_user_activity_chart(user_activity):
         mode='lines+markers',
         marker_color='#FF6B6B'
     ))
-
     fig.add_trace(go.Scatter(
         x=filtered_activity['date'],
         y=filtered_activity['total'],
@@ -1083,14 +923,12 @@ def create_user_activity_chart(user_activity):
         marker_color='#746AB0',
         line=dict(width=3)
     ))
-
     fig.update_layout(
         title="Activity Trend (Last 30 Days)",
         xaxis_title="Date",
         yaxis_title="Problems Solved",
         showlegend=True
     )
-
     return fig
 
 
@@ -1119,7 +957,6 @@ def create_user_details_card(user_data, student_info, streak_info, last_week_gro
             ])
         ])
     ])
-
     return card
 
 
@@ -1129,16 +966,10 @@ def create_user_details_card(user_data, student_info, streak_info, last_week_gro
     [State('student-data-store', 'data')]
 )
 def update_activity_trends(selected_dept, student_data_store):
-    # Load data
     _, activity_df = load_data()
-
-    # Load student data
     student_data = pd.DataFrame(student_data_store.get('student_data', []))
-
-    # Merge activity with student data
     merged_activity = pd.merge(activity_df, student_data, left_on='username', right_on='username', how='left')
 
-    # Filter by department if needed
     if selected_dept != 'All':
         merged_activity = merged_activity[merged_activity['Department'] == selected_dept]
 
@@ -1146,9 +977,7 @@ def update_activity_trends(selected_dept, student_data_store):
         empty_fig = go.Figure()
         return [empty_fig]
 
-    # Create the inactive students chart
     inactive_chart = create_inactive_students_chart(merged_activity, student_data, selected_dept)
-
     return [inactive_chart]
 
 
@@ -1156,158 +985,196 @@ def create_inactive_students_chart(activity_df, student_data, selected_dept):
     if activity_df.empty:
         return go.Figure()
 
-    # Filter student data by department if needed
     if selected_dept != 'All':
-        student_data = student_data[student_data['Department'] == selected_dept].copy()  # Use .copy() to avoid warnings
+        student_data = student_data[student_data['Department'] == selected_dept].copy()
 
-    # Get list of all usernames
     all_usernames = set(student_data['username'].unique())
-
-    # Get active usernames in last 7 days
     end_date = datetime.now()
     start_date = end_date - timedelta(days=7)
-
-    activity_df = activity_df.copy()  # Create a copy to avoid warnings
+    activity_df = activity_df.copy()
     activity_df['date'] = pd.to_datetime(activity_df['date'])
     recent_activity = activity_df[(activity_df['date'] >= start_date) & (activity_df['date'] <= end_date)]
     active_usernames = set(recent_activity[recent_activity['total'] > 0]['username'].unique())
-
-    # Get inactive usernames
     inactive_usernames = all_usernames - active_usernames
-
-    # Count active and inactive students
     active_count = len(active_usernames)
     inactive_count = len(inactive_usernames)
 
-    # Create pie chart
     fig = go.Figure(data=[go.Pie(
         labels=['Active Students', 'Inactive Students'],
         values=[active_count, inactive_count],
-        hoverinfo='label+percent+value',  # Show label, percent, and raw value on hover
-        textinfo='label+value+percent',  # Show label, raw value, and percentage on the chart
+        hoverinfo='label+percent+value',
+        textinfo='label+value+percent',
         marker=dict(colors=['#00B0A1', '#FF6B6B'])
     )])
-
     fig.update_layout(
         title="Active vs Inactive Students (Last 7 Days)",
         showlegend=True
     )
-
     return fig
 
 
-# Fix for the SettingWithCopyWarning in generate_excel function
 @app.callback(
     Output("download-datasheet-excel", "data"),
-    [Input("download-btn", "n_clicks")],
+    [Input("download-btn", "n_clicks"),
+     Input("download-month-btn", "n_clicks")],
     [State("download-dept-filter", "value"),
-     State("student-data-store", "data")]
+     State("student-data-store", "data")],
+    prevent_initial_call=True
 )
-def generate_excel(n_clicks, selected_dept, student_data_store):
-    if n_clicks is None:
+def generate_excel(n_clicks_7days, n_clicks_month, selected_dept, student_data_store):
+    ctx = dash.callback_context
+    if not ctx.triggered:
         return dash.no_update
 
-    # Load data
-    _, activity_df = load_data()
-
-    # Load student data
+    button_id = ctx.triggered[0]['prop_id'].split('.')[0]
     student_data = pd.DataFrame(student_data_store.get('student_data', []))
 
-    # Filter student data by department if needed
     if selected_dept != 'All':
-        student_data = student_data[student_data['Department'] == selected_dept].copy()  # Create a copy
+        student_data = student_data[student_data['Department'] == selected_dept].copy()
 
-    # Get last 7 days activity
-    end_date = datetime.now().date()
-    start_date = end_date - timedelta(days=6)  # 7 days including today
-    date_range = pd.date_range(start=start_date, end=end_date)
+    usernames = student_data['username'].tolist()
+    if not usernames:
+        return dash.no_update
 
-    # Create a copy of activity_df to avoid SettingWithCopyWarning
-    activity_df = activity_df.copy()
+    if button_id == "download-btn" and n_clicks_7days:
+        try:
+            activity_df = pd.read_csv('./output/leetcode_daily_activity.csv')
+            activity_df['date'] = pd.to_datetime(activity_df['date'])
+            end_date = datetime.now().date()
+            start_date = end_date - timedelta(days=6)
+            date_range = pd.date_range(start=start_date, end=end_date)
+            filtered_activity = activity_df[
+                (activity_df['username'].isin(student_data['username'])) &
+                (activity_df['date'] >= pd.Timestamp(start_date)) &
+                (activity_df['date'] <= pd.Timestamp(end_date))
+                ].copy()
 
-    # Ensure activity_df has datetime
-    activity_df['date'] = pd.to_datetime(activity_df['date'])
+            if not filtered_activity.empty:
+                filtered_activity.loc[:, 'date_str'] = filtered_activity['date'].dt.strftime('%Y-%m-%d')
+                pivot_df = filtered_activity.pivot_table(
+                    index='username',
+                    columns='date_str',
+                    values='total',
+                    aggfunc='sum',
+                    fill_value=0
+                ).reset_index()
 
-    # Filter activity by username and date range
-    filtered_activity = activity_df[
-        (activity_df['username'].isin(student_data['username'])) &
-        (activity_df['date'] >= pd.Timestamp(start_date)) &
-        (activity_df['date'] <= pd.Timestamp(end_date))
-        ].copy()  # Create a copy
+                for date in date_range:
+                    date_str = date.strftime('%Y-%m-%d')
+                    if date_str not in pivot_df.columns:
+                        pivot_df[date_str] = 0
 
-    # Create a pivot table with dates as columns and usernames as rows
-    if not filtered_activity.empty:
-        # Convert date to string format for pivot
-        filtered_activity.loc[:, 'date_str'] = filtered_activity['date'].dt.strftime('%Y-%m-%d')
+                result_df = pd.merge(student_data[['username', 'Register_Number', 'Student_Name', 'Department']],
+                                     pivot_df, on='username', how='left')
+                date_cols = [date.strftime('%Y-%m-%d') for date in date_range]
+                for col in date_cols:
+                    if col in result_df.columns:
+                        result_df[col] = result_df[col].fillna(0).astype(int)
+                    else:
+                        result_df[col] = 0
 
-        # Create pivot for total problems solved per day
-        pivot_df = filtered_activity.pivot_table(
-            index='username',
-            columns='date_str',
-            values='total',
-            aggfunc='sum',
-            fill_value=0
-        ).reset_index()
-
-        # Ensure all dates are present
-        for date in date_range:
-            date_str = date.strftime('%Y-%m-%d')
-            if date_str not in pivot_df.columns:
-                pivot_df[date_str] = 0
-
-        # Merge with student info
-        result_df = pd.merge(student_data[['username', 'Register_Number', 'Student_Name', 'Department']],
-                             pivot_df,
-                             on='username',
-                             how='left')
-
-        # Fill NaN values with 0
-        date_cols = [date.strftime('%Y-%m-%d') for date in date_range]
-        for col in date_cols:
-            if col in result_df.columns:
-                result_df[col] = result_df[col].fillna(0).astype(int)
+                ordered_cols = ['Register_Number', 'Student_Name', 'username', 'Department'] + date_cols
+                result_df = result_df[ordered_cols]
             else:
-                result_df[col] = 0
+                result_df = student_data[['Register_Number', 'Student_Name', 'username', 'Department']].copy()
+                for date in date_range:
+                    result_df[date.strftime('%Y-%m-%d')] = 0
 
-        # Reorder columns
-        ordered_cols = ['Register_Number', 'Student_Name', 'username', 'Department'] + date_cols
-        result_df = result_df[ordered_cols]
+            result_df = result_df.rename(columns={'username': 'LeetCode Username'})
+            dept_name = selected_dept if selected_dept != 'All' else 'All_Departments'
+            current_date = datetime.now().strftime('%Y-%m-%d')
+            filename = f"LeetCode_7Day_Activity_{dept_name}_{current_date}.xlsx"
+            return dcc.send_data_frame(result_df.to_excel, filename, index=False)
 
-    else:
-        # Create empty dataframe with all required columns
-        result_df = student_data[['Register_Number', 'Student_Name', 'username', 'Department']].copy()
-        for date in date_range:
-            result_df[date.strftime('%Y-%m-%d')] = 0
+        except Exception as e:
+            print(f"Error generating 7-day data: {e}")
+            return dash.no_update
 
-    # Rename columns for clarity
-    result_df = result_df.rename(columns={
-        'username': 'LeetCode Username'
-    })
+    elif button_id == "download-month-btn" and n_clicks_month:
+        try:
+            asyncio.run(run_scraper(usernames, days=30, output_file="./output/leetcode_past_month.csv"))
+            activity_df = pd.read_csv('./output/leetcode_past_month.csv')
+        except Exception as e:
+            print(f"Error running past month scraper: {e}")
+            activity_df = pd.DataFrame(columns=['username', 'date', 'easy', 'medium', 'hard', 'total', 'year_range'])
 
-    # Generate Excel file
-    dept_name = selected_dept if selected_dept != 'All' else 'All_Departments'
-    current_date = datetime.now().strftime('%Y-%m-%d')
-    filename = f"LeetCode_Activity_{dept_name}_{current_date}.xlsx"
+        end_date = datetime.now().date()
+        start_date = end_date - timedelta(days=29)
+        date_range = pd.date_range(start=start_date, end=end_date)
+        activity_df = activity_df.copy()
+        activity_df['date'] = pd.to_datetime(activity_df['date'])
 
-    return dcc.send_data_frame(result_df.to_excel, filename, index=False)
+        filtered_activity = activity_df[
+            (activity_df['username'].isin(student_data['username'])) &
+            (activity_df['date'] >= pd.Timestamp(start_date)) &
+            (activity_df['date'] <= pd.Timestamp(end_date))
+            ].copy()
+
+        if not filtered_activity.empty:
+            filtered_activity.loc[:, 'date_str'] = filtered_activity['date'].dt.strftime('%Y-%m-%d')
+            pivot_df = filtered_activity.pivot_table(
+                index='username',
+                columns='date_str',
+                values='total',
+                aggfunc='sum',
+                fill_value=0
+            ).reset_index()
+
+            for date in date_range:
+                date_str = date.strftime('%Y-%m-%d')
+                if date_str not in pivot_df.columns:
+                    pivot_df[date_str] = 0
+
+            result_df = pd.merge(student_data[['username', 'Register_Number', 'Student_Name', 'Department']],
+                                 pivot_df, on='username', how='left')
+            date_cols = [date.strftime('%Y-%m-%d') for date in date_range]
+            for col in date_cols:
+                if col in result_df.columns:
+                    result_df[col] = result_df[col].fillna(0).astype(int)
+                else:
+                    result_df[col] = 0
+
+            ordered_cols = ['Register_Number', 'Student_Name', 'username', 'Department'] + date_cols
+            result_df = result_df[ordered_cols]
+        else:
+            result_df = student_data[['Register_Number', 'Student_Name', 'username', 'Department']].copy()
+            for date in date_range:
+                result_df[date.strftime('%Y-%m-%d')] = 0
+
+        result_df = result_df.rename(columns={'username': 'LeetCode Username'})
+        dept_name = selected_dept if selected_dept != 'All' else 'All_Departments'
+        current_date = datetime.now().strftime('%Y-%m-%d')
+        filename = f"LeetCode_PastMonth_Activity_{dept_name}_{current_date}.xlsx"
+        return dcc.send_data_frame(result_df.to_excel, filename, index=False)
+
+    return dash.no_update
 
 
 @app.callback(
     Output("download-status", "children"),
-    [Input("download-btn", "n_clicks")]
+    [Input("download-btn", "n_clicks"),
+     Input("download-month-btn", "n_clicks")],
+    prevent_initial_call=True
 )
-def update_download_status(n_clicks):
-    if n_clicks is None:
+def update_download_status(n_clicks_7days, n_clicks_month):
+    ctx = dash.callback_context
+    if not ctx.triggered:
         return ""
 
-    return html.Div(
-        "Excel file generated successfully! Check your downloads folder.",
-        style={"color": "green", "font-weight": "bold"}
-    )
+    button_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    if button_id == "download-btn" and n_clicks_7days:
+        message = "7-day Excel file generated successfully! Check your downloads folder."
+    elif button_id == "download-month-btn" and n_clicks_month:
+        message = "Past month Excel file generated successfully! Check your downloads folder."
+    else:
+        return ""
+
+    return html.Div(message, style={"color": "green", "font-weight": "bold"})
+
 
 @app.callback(
     [Output('page-content', 'children'),
-     Output('auth-status', 'data'),  # Update authentication state
+     Output('auth-status', 'data'),
      Output('login-alert', 'children'),
      Output('login-alert', 'is_open'),
      Output('login-alert', 'color')],
@@ -1320,21 +1187,17 @@ def handle_login(n_clicks, username, password):
         raise dash.exceptions.PreventUpdate
 
     if authenticate_user(username, password):
-        # Update page to the main dashboard and set auth-status to True
         return (
             dbc.Container([
                 dcc.Store(id='usernames-store'),
                 dcc.Store(id='student-data-store'),
                 dcc.Store(id='data-loaded-flag', data=False),
-                dcc.Store(id='processed-data', data={'ready': False}),  # Store for processed data
-
+                dcc.Store(id='processed-data', data={'ready': False}),
                 dbc.Row(dbc.Col(
                     html.Img(src="https://images.careerindia.com/college-photos/5858/eec-logo-finalized_1627136049.png",
                              style={"height": "100px", "margin": "auto", "display": "block"}))
                 ),
                 dbc.Row(dbc.Col(html.H1("LeetCode Dashboard", className="text-center my-4"))),
-
-                # File upload section
                 dbc.Row([
                     dbc.Col([
                         dcc.Upload(
@@ -1364,19 +1227,16 @@ def handle_login(n_clicks, username, password):
                         )
                     ], width=12)
                 ]),
-
-                dbc.Row(dbc.Col(tabs)),  # Add tabs only after successful login
+                dbc.Row(dbc.Col(tabs)),
                 html.Div(id="tab-content"),
-
-                # Download component
                 dcc.Download(id="download-datasheet-excel")
             ]),
-            True,  
+            True,
             "Login successful!", True, "success"
         )
     else:
         return login_layout, False, "Invalid username or password.", True, "danger"
-    
+
 
 if __name__ == '__main__':
     app.run(debug=True)
