@@ -1,52 +1,60 @@
-import requests
-import json
-import csv
-import time
-import datetime
 import asyncio
 import aiohttp
-import pandas as pd
-from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
+import json
+import csv
 import logging
+import sqlite3
+from datetime import datetime, timedelta
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 import pytz
 import os
-import hashlib
 
 # Configure logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 class LeetCodeScraper:
-    def __init__(self, max_workers=5, rate_limit=5, days=7, submission_limit=1000):
+    def __init__(self, days=7, submission_limit=100, max_concurrent=20):
         """
-        Initialize the LeetCode scraper with concurrency settings
+        Initialize the LeetCode scraper with optimized settings.
 
         Args:
-            max_workers (int): Maximum number of concurrent workers
-            rate_limit (int): Maximum requests per second
-            days (int): Number of days to scrape (e.g., 7 or 30)
-            submission_limit (int): Maximum submissions to fetch per user
+            days (int): Number of days to scrape (e.g., 7).
+            submission_limit (int): Max submissions to fetch per user.
+            max_concurrent (int): Max concurrent API requests.
         """
-        self.max_workers = max_workers
-        self.rate_limit = rate_limit
         self.days = days
         self.submission_limit = submission_limit
+        self.max_concurrent = max_concurrent
         self.session = None
+        self.semaphore = asyncio.Semaphore(max_concurrent)
         self.headers = {
             "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/91.0.4472.124",
             "Referer": "https://leetcode.com/",
             "Origin": "https://leetcode.com"
         }
+        self.cache_db = "leetcode_cache.db"
         self.difficulty_cache_file = "./output/difficulty_cache.json"
         self.difficulty_cache = self.load_difficulty_cache()
         self.year_range = "2022-2026"
         self.validation_report = []
+        self.init_cache_db()
+
+    def init_cache_db(self):
+        """Initialize SQLite cache database."""
+        self.conn = sqlite3.connect(self.cache_db)
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS cache (
+                username TEXT PRIMARY KEY,
+                data TEXT,
+                timestamp DATETIME
+            )
+        """)
+        self.conn.commit()
 
     def load_difficulty_cache(self):
-        """Load difficulty cache from disk"""
+        """Load difficulty cache from disk."""
         try:
             if os.path.exists(self.difficulty_cache_file):
                 with open(self.difficulty_cache_file, 'r') as f:
@@ -57,7 +65,7 @@ class LeetCodeScraper:
             return {}
 
     def save_difficulty_cache(self):
-        """Save difficulty cache to disk"""
+        """Save difficulty cache to disk."""
         try:
             with open(self.difficulty_cache_file, 'w') as f:
                 json.dump(self.difficulty_cache, f)
@@ -65,27 +73,32 @@ class LeetCodeScraper:
             logger.error(f"Error saving difficulty cache: {e}")
 
     async def _init_session(self):
-        """Initialize aiohttp session with timeout"""
+        """Initialize aiohttp session with connection pooling."""
         if self.session is None:
-            timeout = aiohttp.ClientTimeout(total=30)
-            self.session = aiohttp.ClientSession(headers=self.headers, timeout=timeout)
+            timeout = aiohttp.ClientTimeout(total=10)
+            self.session = aiohttp.ClientSession(
+                headers=self.headers,
+                timeout=timeout,
+                connector=aiohttp.TCPConnector(limit=self.max_concurrent)
+            )
 
     async def close_session(self):
-        """Close aiohttp session"""
+        """Close aiohttp session."""
         if self.session:
             await self.session.close()
             self.session = None
+        self.conn.close()
 
     @retry(
-        stop=stop_after_attempt(5),
-        wait=wait_exponential(multiplier=1, min=4, max=10),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=0.5, min=1, max=5),
         retry=retry_if_exception_type((aiohttp.ClientError, ValueError))
     )
-    async def get_user_profile(self, username):
-        """Get basic user profile data with retry"""
+    async def get_user_data(self, username):
+        """Fetch user profile and submissions in a single GraphQL query."""
         await self._init_session()
         query = """
-        query getUserProfile($username: String!) {
+        query userData($username: String!, $limit: Int!) {
             matchedUser(username: $username) {
                 username
                 submitStats {
@@ -95,33 +108,6 @@ class LeetCodeScraper:
                     }
                 }
             }
-        }
-        """
-        variables = {"username": username}
-        payload = {"query": query, "variables": variables}
-        url = "https://leetcode.com/graphql"
-
-        async with self.session.post(url, json=payload) as response:
-            if response.status != 200:
-                logger.error(f"Profile fetch for {username}: HTTP {response.status}")
-                raise ValueError(f"HTTP {response.status}")
-            data = await response.json()
-            logger.debug(f"Profile response for {username}: {json.dumps(data, indent=2)}")
-            if data.get("data") is None or data["data"].get("matchedUser") is None:
-                logger.warning(f"User '{username}' not found")
-                return None
-            return data["data"]
-
-    @retry(
-        stop=stop_after_attempt(5),
-        wait=wait_exponential(multiplier=1, min=4, max=10),
-        retry=retry_if_exception_type((aiohttp.ClientError, ValueError))
-    )
-    async def get_recent_submissions(self, username):
-        """Get submission history"""
-        await self._init_session()
-        query = """
-        query recentSubmissions($username: String!, $limit: Int!) {
             recentSubmissionList(username: $username, limit: $limit) {
                 title
                 timestamp
@@ -136,24 +122,24 @@ class LeetCodeScraper:
         payload = {"query": query, "variables": variables}
         url = "https://leetcode.com/graphql"
 
-        async with self.session.post(url, json=payload) as response:
-            if response.status != 200:
-                logger.error(f"Submissions fetch for {username}: HTTP {response.status}")
-                raise ValueError(f"HTTP {response.status}")
-            data = await response.json()
-            logger.debug(f"Submissions response for {username}: {json.dumps(data, indent=2)}")
-            if data.get("data") is None or data["data"].get("recentSubmissionList") is None:
-                logger.warning(f"No submission data for '{username}'")
-                return []
-            return data["data"]["recentSubmissionList"]
+        async with self.semaphore:
+            async with self.session.post(url, json=payload) as response:
+                if response.status != 200:
+                    logger.error(f"Fetch for {username}: HTTP {response.status}")
+                    raise ValueError(f"HTTP {response.status}")
+                data = await response.json()
+                if data.get("data") is None or data["data"].get("matchedUser") is None:
+                    logger.warning(f"User '{username}' not found")
+                    return None
+                return data["data"]
 
     @retry(
-        stop=stop_after_attempt(5),
-        wait=wait_exponential(multiplier=1, min=4, max=10),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=0.5, min=1, max=5),
         retry=retry_if_exception_type((aiohttp.ClientError, ValueError))
     )
     async def get_problem_difficulty(self, title_slug):
-        """Get problem difficulty level with caching"""
+        """Get problem difficulty with caching."""
         if title_slug in self.difficulty_cache:
             return self.difficulty_cache[title_slug]
 
@@ -169,58 +155,43 @@ class LeetCodeScraper:
         payload = {"query": query, "variables": variables}
         url = "https://leetcode.com/graphql"
 
-        async with self.session.post(url, json=payload) as response:
-            if response.status != 200:
-                logger.error(f"Difficulty fetch for {title_slug}: HTTP {response.status}")
-                raise ValueError(f"HTTP {response.status}")
-            data = await response.json()
-            logger.debug(f"Difficulty response for {title_slug}: {json.dumps(data, indent=2)}")
-            if data.get("data") is None or data["data"].get("question") is None:
-                logger.warning(f"No difficulty data for {title_slug}")
-                return "Unknown"
-            difficulty = data["data"]["question"]["difficulty"]
-            self.difficulty_cache[title_slug] = difficulty
-            self.save_difficulty_cache()
-            return difficulty
+        async with self.semaphore:
+            async with self.session.post(url, json=payload) as response:
+                if response.status != 200:
+                    logger.error(f"Difficulty fetch for {title_slug}: HTTP {response.status}")
+                    raise ValueError(f"HTTP {response.status}")
+                data = await response.json()
+                if data.get("data") is None or data["data"].get("question") is None:
+                    logger.warning(f"No difficulty data for {title_slug}")
+                    return "Unknown"
+                difficulty = data["data"]["question"]["difficulty"]
+                self.difficulty_cache[title_slug] = difficulty
+                self.save_difficulty_cache()
+                return difficulty
 
-    async def validate_username(self, username):
-        """Check if a username exists"""
-        profile = await self.get_user_profile(username)
-        return profile is not None
+    async def get_cached_user_data(self, username):
+        """Check cache before fetching user data."""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT data, timestamp FROM cache WHERE username = ?", (username,))
+        result = cursor.fetchone()
+        if result:
+            timestamp = datetime.fromisoformat(result[1])
+            if timestamp > datetime.now() - timedelta(hours=1):  # Cache valid for 1 hour
+                return json.loads(result[0])
 
-    def parse_timestamp(self, timestamp_value):
-        """Parse timestamp in UTC"""
-        try:
-            if isinstance(timestamp_value, (int, float)):
-                return datetime.fromtimestamp(timestamp_value, tz=pytz.UTC)
-            elif isinstance(timestamp_value, str):
-                try:
-                    return datetime.fromtimestamp(int(timestamp_value), tz=pytz.UTC)
-                except ValueError:
-                    for fmt in (
-                        "%Y-%m-%dT%H:%M:%S%z",
-                        "%Y-%m-%dT%H:%M:%S",
-                        "%Y-%m-%d %H:%M:%S",
-                        "%Y-%m-%d"
-                    ):
-                        try:
-                            dt = datetime.strptime(timestamp_value, fmt)
-                            if "%z" not in fmt:
-                                dt = dt.replace(tzinfo=pytz.UTC)
-                            return dt
-                        except ValueError:
-                            continue
-                    raise ValueError(f"Invalid timestamp format: {timestamp_value}")
-            else:
-                raise ValueError(f"Unrecognized timestamp type: {type(timestamp_value)}")
-        except Exception as e:
-            logger.error(f"Failed to parse timestamp '{timestamp_value}': {e}")
-            raise
+        data = await self.get_user_data(username)
+        if data:
+            cursor.execute(
+                "INSERT OR REPLACE INTO cache (username, data, timestamp) VALUES (?, ?, ?)",
+                (username, json.dumps(data), datetime.now().isoformat())
+            )
+            self.conn.commit()
+        return data
 
     async def process_user(self, username):
-        """Process a single user's data with validation"""
-        if not await self.validate_username(username):
-            logger.warning(f"Skipping invalid username: {username}")
+        """Process a single user's data."""
+        data = await self.get_cached_user_data(username)
+        if not data:
             self.validation_report.append({
                 "username": username,
                 "status": "Invalid",
@@ -234,25 +205,9 @@ class LeetCodeScraper:
                 "daily_activity": []
             }
 
-        profile_data = await self.get_user_profile(username)
-        if not profile_data:
-            logger.error(f"Failed to fetch profile for {username}")
-            self.validation_report.append({
-                "username": username,
-                "status": "Failed",
-                "details": "Profile fetch failed"
-            })
-            return {
-                "username": username,
-                "error": "Failed to fetch profile",
-                "problems_solved": {"easy": 0, "medium": 0, "hard": 0},
-                "total_solved": 0,
-                "daily_activity": []
-            }
-
         stats = {"username": username, "problems_solved": {}}
         try:
-            submission_stats = profile_data["matchedUser"]["submitStats"]["acSubmissionNum"]
+            submission_stats = data["matchedUser"]["submitStats"]["acSubmissionNum"]
             for item in submission_stats:
                 difficulty = item["difficulty"]
                 count = item["count"]
@@ -270,7 +225,7 @@ class LeetCodeScraper:
                 "details": f"Stats processing error: {e}"
             })
 
-        submissions = await self.get_recent_submissions(username)
+        submissions = data.get("recentSubmissionList", [])
         today = datetime.now(pytz.UTC)
         time_ago = today - timedelta(days=self.days)
         daily_activity = {}
@@ -288,43 +243,37 @@ class LeetCodeScraper:
                 "year_range": self.year_range
             }
 
-        if submissions:
-            submissions = sorted(submissions, key=lambda x: int(x.get("timestamp", 0)), reverse=True)
-            unique_submissions = {}
-            for submission in submissions:
-                try:
-                    timestamp = self.parse_timestamp(submission.get("timestamp", ""))
-                    date_str = timestamp.strftime("%Y-%m-%d")
-                    if timestamp < time_ago:
-                        continue
-                    if submission.get("statusDisplay") != "Accepted":
-                        continue
-                    submission_id = submission.get("id")
-                    title_slug = submission["titleSlug"]
-                    submission_key = f"{date_str}:{title_slug}:{submission_id}"
-                    if submission_key in unique_submissions:
-                        continue
-                    unique_submissions[submission_key] = True
-                    difficulty = await self.get_problem_difficulty(title_slug)
-                    difficulty = difficulty.lower()
-                    if date_str not in daily_activity:
-                        continue
-                    if difficulty in ["easy", "medium", "hard"]:
-                        daily_activity[date_str][difficulty] += 1
+        unique_submissions = set()
+        for submission in submissions:
+            try:
+                timestamp = int(submission.get("timestamp", 0))
+                dt = datetime.fromtimestamp(timestamp, tz=pytz.UTC)
+                date_str = dt.strftime("%Y-%m-%d")
+                if dt < time_ago or submission.get("statusDisplay") != "Accepted":
+                    continue
+                submission_id = submission.get("id")
+                title_slug = submission["titleSlug"]
+                submission_key = f"{date_str}:{title_slug}:{submission_id}"
+                if submission_key in unique_submissions:
+                    continue
+                unique_submissions.add(submission_key)
+                difficulty = await self.get_problem_difficulty(title_slug)
+                difficulty = difficulty.lower()
+                if date_str in daily_activity and difficulty in ["easy", "medium", "hard"]:
+                    daily_activity[date_str][difficulty] += 1
                     daily_activity[date_str]["total"] += 1
                     daily_activity[date_str]["problems"].append({
                         "title": submission["title"],
                         "difficulty": difficulty,
                         "submission_id": submission_id
                     })
-                except Exception as e:
-                    logger.error(f"Error processing submission for {username}: {e}")
-                    self.validation_report.append({
-                        "username": username,
-                        "status": "Warning",
-                        "details": f"Submission processing error: {e}"
-                    })
-                    continue
+            except Exception as e:
+                logger.error(f"Error processing submission for {username}: {e}")
+                self.validation_report.append({
+                    "username": username,
+                    "status": "Warning",
+                    "details": f"Submission processing error: {e}"
+                })
 
         stats["daily_activity"] = sorted(
             daily_activity.values(),
@@ -332,59 +281,22 @@ class LeetCodeScraper:
             reverse=True
         )
 
-        # Validate daily totals against profile
-        daily_total = sum(day["total"] for day in stats["daily_activity"])
-        profile_total = stats.get("total_solved", 0)
-        if daily_total > profile_total:
-            logger.warning(f"Data inconsistency for {username}: Daily total ({daily_total}) exceeds profile total ({profile_total})")
-            self.validation_report.append({
-                "username": username,
-                "status": "Error",
-                "details": f"Daily total ({daily_total}) exceeds profile total ({profile_total})"
-            })
-
-        daily_difficulties = {
-            "easy": sum(day["easy"] for day in stats["daily_activity"]),
-            "medium": sum(day["medium"] for day in stats["daily_activity"]),
-            "hard": sum(day["hard"] for day in stats["daily_activity"])
-        }
-        for difficulty in ["easy", "medium", "hard"]:
-            profile_count = stats["problems_solved"].get(difficulty, 0)
-            daily_count = daily_difficulties[difficulty]
-            if daily_count > profile_count:
-                logger.warning(f"Data inconsistency for {username}: {difficulty} daily count ({daily_count}) exceeds profile count ({profile_count})")
-                self.validation_report.append({
-                    "username": username,
-                    "status": "Error",
-                    "details": f"{difficulty} daily count ({daily_count}) exceeds profile count ({profile_count})"
-                })
-
         self.validation_report.append({
             "username": username,
             "status": "Success",
-            "details": f"Processed {daily_total} submissions"
+            "details": f"Processed {stats['total_solved']} submissions"
         })
         return stats
 
     async def process_multiple_users(self, usernames):
-        """Process multiple users concurrently"""
+        """Process multiple users concurrently."""
         await self._init_session()
-        valid_usernames = []
-        for username in usernames:
-            if await self.validate_username(username):
-                valid_usernames.append(username)
-            else:
-                logger.warning(f"Excluding invalid username: {username}")
-
-        tasks = []
-        for username in valid_usernames:
-            await asyncio.sleep(1.0 / self.rate_limit)
-            tasks.append(self.process_user(username))
+        tasks = [self.process_user(username) for username in usernames]
         results = await asyncio.gather(*tasks, return_exceptions=True)
         return {result["username"]: result for result in results if isinstance(result, dict)}
 
 def save_activity_to_csv(results, filename, days):
-    """Save activity to CSV file"""
+    """Save activity to CSV file."""
     rows = []
     for username, data in results.items():
         if "error" in data:
@@ -404,6 +316,7 @@ def save_activity_to_csv(results, filename, days):
         rows = [{"username": "", "date": "", "easy": 0, "medium": 0, "hard": 0, "total": 0, "year_range": "2022-2026"}]
 
     keys = rows[0].keys()
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
     with open(filename, 'w', newline='') as f:
         dict_writer = csv.DictWriter(f, keys)
         dict_writer.writeheader()
@@ -411,8 +324,9 @@ def save_activity_to_csv(results, filename, days):
     logger.info(f"Activity for past {days} days saved to {filename}")
 
 def save_validation_report(report, filename="./output/validation_report.json"):
-    """Save validation report to JSON"""
+    """Save validation report to JSON."""
     try:
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
         with open(filename, 'w') as f:
             json.dump(report, f, indent=2)
         logger.info(f"Validation report saved to {filename}")
@@ -420,13 +334,15 @@ def save_validation_report(report, filename="./output/validation_report.json"):
         logger.error(f"Error saving validation report: {e}")
 
 async def main(usernames, days=7, output_file="./output/leetcode_daily_activity.csv"):
-    """Main function to handle async execution"""
-    scraper = LeetCodeScraper(max_workers=5, rate_limit=5, days=days, submission_limit=1000)
+    """Main function to handle async execution."""
+    scraper = LeetCodeScraper(days=days, submission_limit=100, max_concurrent=20)
     try:
+        start_time = datetime.now()
         results = await scraper.process_multiple_users(usernames)
         save_activity_to_csv(results, output_file, days)
         save_validation_report(scraper.validation_report)
-        logger.info("\n--- Summary ---")
+        elapsed = (datetime.now() - start_time).total_seconds()
+        logger.info(f"Scraping completed in {elapsed:.2f} seconds")
         for username, stats in results.items():
             logger.info(f"\n{username} Statistics:")
             if "error" in stats:
@@ -437,55 +353,17 @@ async def main(usernames, days=7, output_file="./output/leetcode_daily_activity.
             logger.info(f"Easy: {problems.get('easy', 'N/A')}")
             logger.info(f"Medium: {problems.get('medium', 'N/A')}")
             logger.info(f"Hard: {problems.get('hard', 'N/A')}")
-            logger.info("\nRecent Activity (last 5 days shown):")
-            for day in stats["daily_activity"][:5]:
-                logger.info(f"  {day['date']}: {day['total']} problems (E:{day['easy']} M:{day['medium']} H:{day['hard']})")
     finally:
         await scraper.close_session()
 
-def debug_leetcode_api(username):
-    """Debug function to check recent submissions format"""
-    url = "https://leetcode.com/graphql"
-    headers = {
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-    }
-    query = """
-    query recentSubmissions($username: String!) {
-        recentSubmissionList(username: $username, limit: 5) {
-            title
-            timestamp
-            statusDisplay
-            lang
-            id
-            titleSlug
-        }
-    }
-    """
-    variables = {"username": username}
-    payload = {"query": query, "variables": variables}
-    response = requests.post(url, headers=headers, json=payload)
-    logger.info(f"Status code: {response.status_code}")
-    if response.status_code == 200:
-        data = response.json()
-        if "data" in data and "recentSubmissionList" in data["data"]:
-            submissions = data["data"]["recentSubmissionList"]
-            if submissions:
-                logger.info(f"Sample submission timestamp: {submissions[0].get('timestamp')}")
-                logger.info(f"Sample timestamp type: {type(submissions[0].get('timestamp'))}")
-                logger.info(f"First few submissions: {json.dumps(submissions[:2], indent=2)}")
-            else:
-                logger.info("No submissions found")
-        else:
-            logger.warning("Unexpected response format")
-            logger.warning(f"Response: {json.dumps(data, indent=2)}")
-    else:
-        logger.error(f"Error response: {response.text}")
-    return response.json() if response.status_code == 200 else None
-
 if __name__ == "__main__":
     def load_usernames(filename="usernames.txt"):
-        with open(filename, 'r') as file:
-            return [line.strip() for line in file if line.strip()]
+        try:
+            with open(filename, 'r') as file:
+                return [line.strip() for line in file if line.strip()]
+        except FileNotFoundError:
+            logger.error("usernames.txt not found. Using default usernames.")
+            return ["user1", "user2", "user3"]  # Replace with real usernames
+
     usernames = load_usernames()
     asyncio.run(main(usernames, days=7))
