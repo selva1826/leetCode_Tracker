@@ -139,7 +139,9 @@ login_layout = dbc.Container([
 
 app.layout = html.Div([
     dcc.Store(id='auth-status', data=False),
-    html.Div(id="page-content", children=login_layout)
+    html.Div(id="page-content", children=login_layout),
+    html.Div(id="tab-content"), 
+    dcc.Download(id="download-leaderboard")  
 ])
 
 
@@ -383,6 +385,12 @@ def render_tab_content(active_tab, data_loaded, student_data_store):
         ]),
         dbc.Row([
             dbc.Col(html.Div(id='full-leaderboard'), width=12)
+        ]),
+        dbc.Row([
+            dbc.Col(
+                dbc.Button("Download Full Leaderboard", id="download-leaderboard-btn", color="primary", className="mt-3"),
+                width={"size": 6, "offset": 3}, className="text-center"
+            )
         ])
     ])
 
@@ -652,6 +660,63 @@ def create_full_leaderboard(users_df):
     return table
 
 
+@app.callback(
+    Output("download-leaderboard", "data"),
+    [Input("download-leaderboard-btn", "n_clicks")],
+    [State("leaderboard-dept-filter", "value"),
+     State("year-filter", "value"),
+     State("student-data-store", "data")],
+    prevent_initial_call=True
+)
+def download_full_leaderboard(n_clicks, selected_dept, selected_year, student_data_store):
+    # Load data as used in the leaderboard display
+    users_df, _ = load_data()
+    student_data = pd.DataFrame(student_data_store.get('student_data', []))
+    filtered_student_data = student_data.copy()
+
+    # Apply the same filters as used in the leaderboard display
+    if selected_dept != 'All':
+        filtered_student_data = filtered_student_data[filtered_student_data['Department'] == selected_dept]
+    if selected_year != 'All' and 'Year' in filtered_student_data.columns:
+        filtered_student_data = filtered_student_data[filtered_student_data['Year'] == selected_year]
+
+    # Merge filtered student data with user data
+    filtered_usernames = filtered_student_data['username'].unique()
+    merged_df = pd.merge(
+        users_df[users_df['Username'].isin(filtered_usernames)],
+        filtered_student_data,
+        left_on='Username',
+        right_on='username',
+        how='left'
+    )
+
+    # If no data is available, do not update
+    if merged_df.empty:
+        return dash.no_update
+
+    # Rename columns to match displayed leaderboard
+    merged_df = merged_df.rename(columns={
+        'EasySolved': 'Easy Solved',
+        'MediumSolved': 'Medium Solved',
+        'HardSolved': 'Hard Solved'
+    })
+
+    # Sort data in descending order of "Total" problems solved
+    merged_df = merged_df.sort_values(by='Total', ascending=False)
+
+    # Add rank column and ensure column order matches the displayed leaderboard
+    merged_df.insert(0, 'Rank', range(1, len(merged_df) + 1))
+    column_order = [
+        'Rank', 'Register_Number', 'Student_Name', 'Username', 'Department',
+        'Total', 'Easy Solved', 'Medium Solved', 'Hard Solved', 'Year'
+    ]
+    merged_df = merged_df[column_order]
+
+    # Generate the Excel file for download
+    filename = "Full_Leaderboard.xlsx"
+    return dcc.send_data_frame(merged_df.to_excel, filename, index=False)
+
+    
 @app.callback(
     [Output('difficulty-avg-chart', 'figure'),
      Output('difficulty-distribution', 'figure'),
