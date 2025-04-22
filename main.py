@@ -203,8 +203,8 @@ def update_user_list(validation_report):
     
     return html.Div(user_list)
 
-from leetcode_scraper import LeetCodeScraper
 import asyncio
+from leetcode_scraper import main as scraper_main  # Import standalone function
 
 @app.callback(
     Output('validation-report-store', 'data'),
@@ -219,13 +219,12 @@ def update_validation_report(n_clicks, usernames_data):
     if not usernames:
         return []
 
-    # Call the backend scraper
+    # Call the correct standalone main function
     try:
-        validation_report = asyncio.run(LeetCodeScraper.main(usernames, days=7))
+        validation_report = asyncio.run(scraper_main(usernames, days=7))
         return validation_report  # Store validation_report in dcc.Store
     except Exception as e:
-        return [{"error": str(e)}]
-
+        return [{"username": "N/A", "status": "Error", "details": str(e)}]
 
 @app.callback(
     Output('validation-report-output', 'children'),
@@ -235,11 +234,17 @@ def render_validation_report(validation_report):
     if not validation_report:
         return html.Div("No validation report available.")
 
-    return html.Ul([
-        html.Li(f"{item['username']} - {item['status']}: {item['details']}",
-                style={"color": "red" if item['status'] == "Invalid" else "black"})
-        for item in validation_report
-    ])
+    report_items = []
+    for item in validation_report:
+        # Check for missing keys and handle gracefully
+        username = item.get('username', 'Unknown')
+        status = item.get('status', 'Unknown')
+        details = item.get('details', 'No details provided')
+        style = {"color": "red"} if status == "Invalid" else {"color": "black"}
+        report_items.append(html.Li(f"{username} - {status}: {details}", style=style))
+    
+    return html.Ul(report_items)
+
 
 @app.callback(
     [Output('processed-data', 'data'),
@@ -576,9 +581,10 @@ def render_tab_content(active_tab, data_loaded, student_data_store):
      Output('full-leaderboard', 'children')],
     [Input('leaderboard-dept-filter', 'value'),
      Input('year-filter', 'value')],
-    [State('student-data-store', 'data')]
+    [State('student-data-store', 'data'),
+     State('validation-report-store', 'data')]  # Add validation_report from dcc.Store
 )
-def update_leaderboard(selected_dept, selected_year, student_data_store):
+def update_leaderboard(selected_dept, selected_year, student_data_store, validation_report):
     users_df, _ = load_data()
     student_data = pd.DataFrame(student_data_store.get('student_data', []))
     filtered_student_data = student_data.copy()
@@ -610,7 +616,7 @@ def update_leaderboard(selected_dept, selected_year, student_data_store):
     })
 
     top_3_fig = create_top_3_chart(merged_df)
-    leaderboard_table = create_full_leaderboard(merged_df)
+    leaderboard_table = create_full_leaderboard(merged_df, validation_report)  # Pass validation_report
     return top_3_fig, leaderboard_table
 
 
@@ -677,9 +683,12 @@ def populate_year_options(student_data_store):
     return options
 
 
-def create_full_leaderboard(users_df):
+def create_full_leaderboard(users_df, validation_report):
     if users_df.empty:
         return html.Div("No data available")
+
+    # Map validation report status to usernames for easy lookup
+    invalid_usernames = {item['username'] for item in validation_report if item['status'] == "Invalid"}
 
     leaderboard_df = users_df.sort_values('Total', ascending=False)
     table = dbc.Table(
@@ -699,18 +708,23 @@ def create_full_leaderboard(users_df):
                 ])
             ),
             html.Tbody([
-                html.Tr([
-                    html.Td(i + 1),
-                    html.Td(user['Register_Number']),
-                    html.Td(user['Student_Name']),
-                    html.Td(user['Username']),
-                    html.Td(user['Department']),
-                    html.Td(user['Total']),
-                    html.Td(user['Easy Solved']),
-                    html.Td(user['Medium Solved']),
-                    html.Td(user['Hard Solved']),
-                    html.Td(user['Year'])
-                ]) for i, (_, user) in enumerate(leaderboard_df.iterrows())
+                html.Tr(
+                    [
+                        html.Td(i + 1),
+                        html.Td(user['Register_Number']),
+                        html.Td(user['Student_Name']),
+                        html.Td(user['Username']),
+                        html.Td(user['Department']),
+                        html.Td(user['Total']),
+                        html.Td(user['Easy Solved']),
+                        html.Td(user['Medium Solved']),
+                        html.Td(user['Hard Solved']),
+                        html.Td(user['Year'])
+                    ],
+                    # Apply red background if the username is invalid
+                    style={"backgroundColor": "red"} if user['Username'] in invalid_usernames else {}
+                )
+                for i, (_, user) in enumerate(leaderboard_df.iterrows())
             ])
         ],
         bordered=True,
