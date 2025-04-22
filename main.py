@@ -1112,10 +1112,14 @@ def generate_excel(n_clicks_7days, n_clicks_month, selected_dept, student_data_s
                 (activity_df['username'].isin(student_data['username'])) &
                 (activity_df['date'] >= pd.Timestamp(start_date)) &
                 (activity_df['date'] <= pd.Timestamp(end_date))
-                ].copy()
+            ].copy()
 
             if not filtered_activity.empty:
                 filtered_activity.loc[:, 'date_str'] = filtered_activity['date'].dt.strftime('%Y-%m-%d')
+                summary_stats = filtered_activity.groupby('username')[
+                    ['easy', 'medium', 'hard', 'total']
+                ].sum().reset_index()
+
                 pivot_df = filtered_activity.pivot_table(
                     index='username',
                     columns='date_str',
@@ -1129,8 +1133,13 @@ def generate_excel(n_clicks_7days, n_clicks_month, selected_dept, student_data_s
                     if date_str not in pivot_df.columns:
                         pivot_df[date_str] = 0
 
-                result_df = pd.merge(student_data[['username', 'Register_Number', 'Student_Name', 'Department']],
-                                     pivot_df, on='username', how='left')
+                result_df = pd.merge(
+                    student_data[['username', 'Register_Number', 'Student_Name', 'Department']],
+                    pivot_df,
+                    on='username',
+                    how='left'
+                )
+                result_df = pd.merge(result_df, summary_stats, on='username', how='left')
                 date_cols = [date.strftime('%Y-%m-%d') for date in date_range]
                 for col in date_cols:
                     if col in result_df.columns:
@@ -1138,12 +1147,13 @@ def generate_excel(n_clicks_7days, n_clicks_month, selected_dept, student_data_s
                     else:
                         result_df[col] = 0
 
-                ordered_cols = ['Register_Number', 'Student_Name', 'username', 'Department'] + date_cols
+                ordered_cols = ['Register_Number', 'Student_Name', 'username', 'Department'] + ['easy', 'medium', 'hard', 'total'] + date_cols
                 result_df = result_df[ordered_cols]
             else:
                 result_df = student_data[['Register_Number', 'Student_Name', 'username', 'Department']].copy()
                 for date in date_range:
                     result_df[date.strftime('%Y-%m-%d')] = 0
+                result_df[['easy', 'medium', 'hard', 'total']] = 0
 
             result_df = result_df.rename(columns={'username': 'LeetCode Username'})
             dept_name = selected_dept if selected_dept != 'All' else 'All_Departments'
@@ -1173,10 +1183,14 @@ def generate_excel(n_clicks_7days, n_clicks_month, selected_dept, student_data_s
             (activity_df['username'].isin(student_data['username'])) &
             (activity_df['date'] >= pd.Timestamp(start_date)) &
             (activity_df['date'] <= pd.Timestamp(end_date))
-            ].copy()
+        ].copy()
 
         if not filtered_activity.empty:
             filtered_activity.loc[:, 'date_str'] = filtered_activity['date'].dt.strftime('%Y-%m-%d')
+            summary_stats = filtered_activity.groupby('username')[
+                ['easy', 'medium', 'hard', 'total']
+            ].sum().reset_index()
+
             pivot_df = filtered_activity.pivot_table(
                 index='username',
                 columns='date_str',
@@ -1190,8 +1204,13 @@ def generate_excel(n_clicks_7days, n_clicks_month, selected_dept, student_data_s
                 if date_str not in pivot_df.columns:
                     pivot_df[date_str] = 0
 
-            result_df = pd.merge(student_data[['username', 'Register_Number', 'Student_Name', 'Department']],
-                                 pivot_df, on='username', how='left')
+            result_df = pd.merge(
+                student_data[['username', 'Register_Number', 'Student_Name', 'Department']],
+                pivot_df,
+                on='username',
+                how='left'
+            )
+            result_df = pd.merge(result_df, summary_stats, on='username', how='left')
             date_cols = [date.strftime('%Y-%m-%d') for date in date_range]
             for col in date_cols:
                 if col in result_df.columns:
@@ -1199,12 +1218,13 @@ def generate_excel(n_clicks_7days, n_clicks_month, selected_dept, student_data_s
                 else:
                     result_df[col] = 0
 
-            ordered_cols = ['Register_Number', 'Student_Name', 'username', 'Department'] + date_cols
+            ordered_cols = ['Register_Number', 'Student_Name', 'username', 'Department'] + ['easy', 'medium', 'hard', 'total'] + date_cols
             result_df = result_df[ordered_cols]
         else:
             result_df = student_data[['Register_Number', 'Student_Name', 'username', 'Department']].copy()
             for date in date_range:
                 result_df[date.strftime('%Y-%m-%d')] = 0
+            result_df[['easy', 'medium', 'hard', 'total']] = 0
 
         result_df = result_df.rename(columns={'username': 'LeetCode Username'})
         dept_name = selected_dept if selected_dept != 'All' else 'All_Departments'
