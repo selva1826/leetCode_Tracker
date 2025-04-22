@@ -138,10 +138,15 @@ login_layout = dbc.Container([
 ])
 
 app.layout = html.Div([
-    dcc.Store(id='auth-status', data=False),
+    dcc.Store(id='validation-report-store'),  # Store to hold validation report data
+    dcc.Store(id='auth-status', data=False),  # Store for authentication status
     html.Div(id="page-content", children=login_layout),
-    html.Div(id="tab-content"), 
-    dcc.Download(id="download-leaderboard")  
+    html.Div([
+        html.H2("Validation Report"),  # Add a title for the report section
+        html.Div(id="validation-report-output")  # This is where the report will be rendered
+    ]),
+    html.Div(id="tab-content"),
+    dcc.Download(id="download-leaderboard")
 ])
 
 
@@ -179,6 +184,62 @@ def handle_upload(contents, filename):
     except Exception as e:
         return dash.no_update, dash.no_update, f"Error reading file: {str(e)}", True, True
 
+@app.callback(
+    Output('user-list', 'children'),
+    [Input('validation-report-store', 'data')]
+)
+def update_user_list(validation_report):
+    if not validation_report:
+        return html.Div("No validation report available.")
+    
+    user_list = []
+    for item in validation_report:
+        username = item['username']
+        if item['status'] == "Invalid":
+            style = {"color": "red", "font-weight": "bold"}
+        else:
+            style = {}
+        user_list.append(html.Div(username, style=style))
+    
+    return html.Div(user_list)
+
+from leetcode_scraper import LeetCodeScraper
+import asyncio
+
+@app.callback(
+    Output('validation-report-store', 'data'),
+    [Input('fetch-data-btn', 'n_clicks')],
+    [State('usernames-store', 'data')]
+)
+def update_validation_report(n_clicks, usernames_data):
+    if not n_clicks or not usernames_data:
+        raise dash.exceptions.PreventUpdate
+
+    usernames = usernames_data.get('usernames', [])
+    if not usernames:
+        return []
+
+    # Call the backend scraper
+    try:
+        validation_report = asyncio.run(LeetCodeScraper.main(usernames, days=7))
+        return validation_report  # Store validation_report in dcc.Store
+    except Exception as e:
+        return [{"error": str(e)}]
+
+
+@app.callback(
+    Output('validation-report-output', 'children'),
+    [Input('validation-report-store', 'data')]
+)
+def render_validation_report(validation_report):
+    if not validation_report:
+        return html.Div("No validation report available.")
+
+    return html.Ul([
+        html.Li(f"{item['username']} - {item['status']}: {item['details']}",
+                style={"color": "red" if item['status'] == "Invalid" else "black"})
+        for item in validation_report
+    ])
 
 @app.callback(
     [Output('processed-data', 'data'),
