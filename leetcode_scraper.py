@@ -340,7 +340,7 @@ async def main(usernames, days=7, output_file="./output/leetcode_daily_activity.
         start_time = datetime.now()
         results = await scraper.process_multiple_users(usernames)
         save_activity_to_csv(results, output_file, days)
-        save_validation_report(scraper.validation_report)
+        save_validation_report(scraper.validation_report)  # Save validation report to file
         elapsed = (datetime.now() - start_time).total_seconds()
         logger.info(f"Scraping completed in {elapsed:.2f} seconds")
         for username, stats in results.items():
@@ -353,6 +353,7 @@ async def main(usernames, days=7, output_file="./output/leetcode_daily_activity.
             logger.info(f"Easy: {problems.get('easy', 'N/A')}")
             logger.info(f"Medium: {problems.get('medium', 'N/A')}")
             logger.info(f"Hard: {problems.get('hard', 'N/A')}")
+        return scraper.validation_report  # Return validation report
     finally:
         await scraper.close_session()
 
