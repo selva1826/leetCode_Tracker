@@ -378,6 +378,12 @@ def render_tab_content(active_tab, data_loaded, student_data_store):
             ], width=6)
         ]),
         dbc.Row([
+            dbc.Col(
+                dbc.Button("Download Full Leaderboard", id="download-leaderboard-btn", color="primary", className="mt-3"),
+                width={"size": 6, "offset": 3}, className="text-center"
+            )
+        ]),
+        dbc.Row([
             dbc.Col(dcc.Graph(id='top-3-chart'), width=12)
         ]),
         dbc.Row([
@@ -386,12 +392,6 @@ def render_tab_content(active_tab, data_loaded, student_data_store):
         dbc.Row([
             dbc.Col(html.Div(id='full-leaderboard'), width=12)
         ]),
-        dbc.Row([
-            dbc.Col(
-                dbc.Button("Download Full Leaderboard", id="download-leaderboard-btn", color="primary", className="mt-3"),
-                width={"size": 6, "offset": 3}, className="text-center"
-            )
-        ])
     ])
 
     user_performance_content = dbc.Container([
