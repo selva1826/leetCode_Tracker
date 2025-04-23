@@ -110,11 +110,11 @@ server = app.server
 
 # Define tabs
 tabs = dbc.Tabs([
-    dbc.Tab(label="Leaderboard", tab_id="leaderboard"),
-    dbc.Tab(label="User Performance", tab_id="user-performance"),
-    dbc.Tab(label="Difficulty Analysis", tab_id="difficulty-analysis"),
-    dbc.Tab(label="Activity Trends", tab_id="activity-trends"),
-    dbc.Tab(label="Download Datasheet", tab_id="download-datasheet")
+    dbc.Tab(label="Leaderboard", tab_id="leaderboard", label_style={"color": "#004AAD"}),
+    dbc.Tab(label="User Performance", tab_id="user-performance", label_style={"color": "#004AAD"}),
+    dbc.Tab(label="Difficulty Analysis", tab_id="difficulty-analysis", label_style={"color": "#004AAD"}),
+    dbc.Tab(label="Activity Trends", tab_id="activity-trends", label_style={"color": "#004AAD"}),
+    dbc.Tab(label="Download Datasheet", tab_id="download-datasheet", label_style={"color": "#004AAD"})
 ], id="tabs", active_tab="leaderboard")
 
 login_layout = dbc.Container([
@@ -122,28 +122,44 @@ login_layout = dbc.Container([
         html.Img(src="https://images.careerindia.com/college-photos/5858/eec-logo-finalized_1627136049.png",
                  style={"height": "100px", "margin": "auto", "display": "block"}))
     ),
-    dbc.Row(dbc.Col(html.H1("Login to LeetCode Tracker", className="text-center my-4"))),
+    dbc.Row(dbc.Col(html.H1("Login to LeetCode Tracker", className="text-center my-4", 
+                            style={"color": "#004AAD", "font-weight": "bold"}))),
     dbc.Row(dbc.Col(
-        dbc.Input(id="login-username", placeholder="Enter Username", type="text", className="mb-3")
-    )),
+        dbc.Input(id="login-username", placeholder="Enter Username", type="text", className="mb-3",
+                  style={"border": "1px solid #004AAD", "border-radius": "5px"}))),
     dbc.Row(dbc.Col(
-        dbc.Input(id="login-password", placeholder="Enter Password", type="password", className="mb-3")
-    )),
+        dbc.Input(id="login-password", placeholder="Enter Password", type="password", className="mb-3",
+                  style={"border": "1px solid #004AAD", "border-radius": "5px"}))),
     dbc.Row(dbc.Col(
-        dbc.Button("Login", id="login-button", color="primary", className="mt-3")
-    )),
+        dbc.Button("Login", id="login-button", color="primary", className="mt-3", 
+                   style={"background-color": "#004AAD", "border": "none"}))),
     dbc.Row(dbc.Col(
-        dbc.Alert(id="login-alert", color="danger", is_open=False, duration=4000)
-    ))
+        dbc.Alert(id="login-alert", color="danger", is_open=False, duration=4000,
+                  style={"border-radius": "5px"})))
 ])
+
 
 app.layout = html.Div([
     dcc.Store(id='auth-status', data=False),
     html.Div(id="page-content", children=login_layout),
     html.Div(id="tab-content"), 
     dcc.Download(id="download-leaderboard")  
-])
+], style={"background-color": "#F9FAFB"}) 
 
+# Updated styles for buttons and dropdowns
+default_dropdown_style = {
+    "border": "1px solid #004AAD",
+    "border-radius": "5px",
+    "background-color": "white",
+    "color": "#004AAD"
+}
+
+default_button_style = {
+    "background-color": "#004AAD",
+    "border": "none",
+    "color": "white",
+    "font-weight": "bold"
+}
 
 # Callback to handle file upload
 @app.callback(
@@ -370,7 +386,7 @@ def render_tab_content(active_tab, data_loaded, student_data_store):
                 html.Label("Filter by Year:"),
                 dcc.Dropdown(
                     id='year-filter',
-                    options=[],
+                    options=[{'label': 'All', 'value': 'All'}], 
                     value='All',
                     clearable=False,
                     className="mb-3"
@@ -606,35 +622,40 @@ def create_top_3_chart(users_df):
     [Input('student-data-store', 'data')]
 )
 def populate_year_options(student_data_store):
+    # Load student data from the store
     student_data = pd.DataFrame(student_data_store.get('student_data', []))
+    
+    # Check if 'Year' column exists
     if 'Year' not in student_data.columns:
         print("Warning: 'Year' column not found in student data")
-        return [{'label': 'All', 'value': 'All'}]
+        return [{'label': 'All', 'value': 'All'}]  # Provide "All" as the only option if no year data exists.
 
+    # Generate unique years and add "All" as the default option
     unique_years = ['All'] + sorted(student_data['Year'].unique().tolist())
     options = [{'label': year, 'value': year} for year in unique_years]
+
     return options
 
 
 def create_full_leaderboard(users_df):
     if users_df.empty:
-        return html.Div("No data available")
+        return html.Div("No data available", style={"text-align": "center", "color": "#004AAD"})
 
     leaderboard_df = users_df.sort_values('Total', ascending=False)
     table = dbc.Table(
         [
             html.Thead(
                 html.Tr([
-                    html.Th("Rank"),
-                    html.Th("Register Number"),
-                    html.Th("Student Name"),
-                    html.Th("Username"),
-                    html.Th("Department"),
-                    html.Th("Total"),
-                    html.Th("Easy"),
-                    html.Th("Medium"),
-                    html.Th("Hard"),
-                    html.Th("Year")
+                    html.Th("Rank", style={"background-color": "#004AAD", "color": "white"}),
+                    html.Th("Register Number", style={"background-color": "#004AAD", "color": "white"}),
+                    html.Th("Student Name", style={"background-color": "#004AAD", "color": "white"}),
+                    html.Th("Username", style={"background-color": "#004AAD", "color": "white"}),
+                    html.Th("Department", style={"background-color": "#004AAD", "color": "white"}),
+                    html.Th("Total", style={"background-color": "#004AAD", "color": "white"}),
+                    html.Th("Easy", style={"background-color": "#004AAD", "color": "white"}),
+                    html.Th("Medium", style={"background-color": "#004AAD", "color": "white"}),
+                    html.Th("Hard", style={"background-color": "#004AAD", "color": "white"}),
+                    html.Th("Year", style={"background-color": "#004AAD", "color": "white"})
                 ])
             ),
             html.Tbody([
@@ -656,19 +677,24 @@ def create_full_leaderboard(users_df):
         hover=True,
         responsive=True,
         striped=True,
+        style={"background-color": "white", "border": "1px solid #004AAD", "border-radius": "5px"}
     )
     return table
 
 
 @app.callback(
     Output("download-leaderboard", "data"),
-    [Input("download-leaderboard-btn", "n_clicks")],
+    [Input("download-leaderboard-btn", "n_clicks")],  # Only listen to the button click
     [State("leaderboard-dept-filter", "value"),
      State("year-filter", "value"),
      State("student-data-store", "data")],
-    prevent_initial_call=True
+    prevent_initial_call=True  # Prevent the callback from firing on initial load
 )
 def download_full_leaderboard(n_clicks, selected_dept, selected_year, student_data_store):
+    # Ensure the callback is triggered only by the button click
+    if n_clicks is None:
+        raise dash.exceptions.PreventUpdate
+
     # Load data as used in the leaderboard display
     users_df, _ = load_data()
     student_data = pd.DataFrame(student_data_store.get('student_data', []))
