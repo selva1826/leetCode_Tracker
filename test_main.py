@@ -668,30 +668,64 @@ def create_top_3_chart(users_df):
     return fig
 
 
-# @app.callback(
-#     Output('year-filter', 'options'),
-#     [Input('student-data-store', 'data')]
-# )
-# def populate_year_options(student_data_store):
-#     # Load student data from the store
-#     student_data = pd.DataFrame(student_data_store.get('student_data', []))
-    
-#     # Check if 'Year' column exists
-#     if 'Year' not in student_data.columns:
-#         print("Warning: 'Year' column not found in student data")
-#         return [{'label': 'All', 'value': 'All'}]  # Provide "All" as the only option if no year data exists.
-
-#     # Generate unique years and add "All" as the default option
-#     unique_years = ['All'] + sorted(student_data['Year'].unique().tolist())
-#     options = [{'label': year, 'value': year} for year in unique_years]
-
-#     return options
 
 @app.callback(
-    Output('year-filter', 'options'),
+    Output('leaderboard-year-filter', 'options'),
     [Input('student-data-store', 'data')]
 )
-def populate_year_options(student_data_store):
+def populate_leaderboard_year_options(student_data_store):
+    student_data = pd.DataFrame(student_data_store.get('student_data', []))
+    if 'Year' not in student_data.columns:
+        return [{'label': 'All', 'value': 'All'}]
+
+    unique_years = ['All'] + sorted(student_data['Year'].unique().tolist())
+    return [{'label': year, 'value': year} for year in unique_years]
+
+
+@app.callback(
+    Output('performance-year-filter', 'options'),
+    [Input('student-data-store', 'data')]
+)
+def populate_performance_year_options(student_data_store):
+    student_data = pd.DataFrame(student_data_store.get('student_data', []))
+    if 'Year' not in student_data.columns:
+        return [{'label': 'All', 'value': 'All'}]
+
+    unique_years = ['All'] + sorted(student_data['Year'].unique().tolist())
+    return [{'label': year, 'value': year} for year in unique_years]
+
+
+@app.callback(
+    Output('difficulty-year-filter', 'options'),
+    [Input('student-data-store', 'data')]
+)
+def populate_difficulty_year_options(student_data_store):
+    student_data = pd.DataFrame(student_data_store.get('student_data', []))
+    if 'Year' not in student_data.columns:
+        return [{'label': 'All', 'value': 'All'}]
+
+    unique_years = ['All'] + sorted(student_data['Year'].unique().tolist())
+    return [{'label': year, 'value': year} for year in unique_years]
+
+
+@app.callback(
+    Output('activity-year-filter', 'options'),
+    [Input('student-data-store', 'data')]
+)
+def populate_activity_year_options(student_data_store):
+    student_data = pd.DataFrame(student_data_store.get('student_data', []))
+    if 'Year' not in student_data.columns:
+        return [{'label': 'All', 'value': 'All'}]
+
+    unique_years = ['All'] + sorted(student_data['Year'].unique().tolist())
+    return [{'label': year, 'value': year} for year in unique_years]
+
+
+@app.callback(
+    Output('download-year-filter', 'options'),
+    [Input('student-data-store', 'data')]
+)
+def populate_download_year_options(student_data_store):
     student_data = pd.DataFrame(student_data_store.get('student_data', []))
     if 'Year' not in student_data.columns:
         return [{'label': 'All', 'value': 'All'}]
