@@ -268,22 +268,35 @@ def process_data(users_df, activity_df):
     Output("tab-content", "children"),
     [Input("tabs", "active_tab"),
      Input("data-loaded-flag", "data"),
-     Input("student-data-store", "data"),
-     Input("year-filter", "value")]  
+     Input("student-data-store", "data")],
 )
-def render_tab_content(active_tab, data_loaded, student_data_store, selected_year):
+def render_tab_content(active_tab, data_loaded, student_data_store):
     if not data_loaded:
         return dbc.Alert("Please upload a student data CSV file and click 'Fetch Data' to load the dashboard.",
                          color="info")
 
+    # Dynamically get the year filter value from the active tab
+    ctx = dash.callback_context
+    selected_year = "All"  # Default value if no year filter is found
+
+    if active_tab == "leaderboard":
+        selected_year = ctx.states.get("leaderboard-year-filter.value", "All")
+    elif active_tab == "user-performance":
+        selected_year = ctx.states.get("performance-year-filter.value", "All")
+    elif active_tab == "difficulty-analysis":
+        selected_year = ctx.states.get("difficulty-year-filter.value", "All")
+    elif active_tab == "activity-trends":
+        selected_year = ctx.states.get("activity-year-filter.value", "All")
+    elif active_tab == "download-datasheet":
+        selected_year = ctx.states.get("download-year-filter.value", "All")
+
+    # Load and filter data
     users_df, activity_df = load_data()
     student_data = pd.DataFrame(student_data_store.get('student_data', [])).copy()
 
-        # Filter student_data by year if selected
     if selected_year != 'All' and 'Year' in student_data.columns:
         student_data = student_data[student_data['Year'] == selected_year]
 
-    # Filter activity_df by year if selected
     if selected_year != 'All' and 'date' in activity_df.columns:
         activity_df = activity_df[activity_df['date'].dt.year == int(selected_year)]
 
@@ -783,7 +796,7 @@ def create_full_leaderboard(users_df):
     Output("download-leaderboard", "data"),
     [Input("download-leaderboard-btn", "n_clicks")],  # Only listen to the button click
     [State("leaderboard-dept-filter", "value"),
-     State("year-filter", "value"),
+     State("leaderboard-year-filter", "value"),
      State("student-data-store", "data")],
     prevent_initial_call=True  # Prevent the callback from firing on initial load
 )
