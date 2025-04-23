@@ -810,12 +810,23 @@ def download_full_leaderboard(n_clicks, selected_dept, selected_year, student_da
     [Output('difficulty-avg-chart', 'figure'),
      Output('difficulty-distribution', 'figure'),
      Output('hard-solvers', 'figure')],
-    [Input('difficulty-dept-filter', 'value')],
+    [Input('difficulty-dept-filter', 'value'),
+     Input('difficulty-year-filter', 'value')],  # Add year filter
     [State('student-data-store', 'data')]
 )
-def update_difficulty_analysis(selected_dept, student_data_store):
+def update_difficulty_analysis(selected_dept, selected_year, student_data_store):
     users_df, _ = load_data()
     student_data = pd.DataFrame(student_data_store.get('student_data', []))
+
+    # Apply department filter
+    if selected_dept != 'All':
+        student_data = student_data[student_data['Department'] == selected_dept]
+
+    # Apply year filter
+    if selected_year != 'All' and 'Year' in student_data.columns:
+        student_data = student_data[student_data['Year'] == selected_year]
+
+    # Merge and process data
     merged_df = pd.merge(users_df, student_data, left_on='Username', right_on='username', how='left')
 
     if selected_dept != 'All':
@@ -918,17 +929,22 @@ def update_student_dropdown(selected_dept, student_data_store):
     [Output('user-problems-chart', 'figure'),
      Output('user-activity-trend', 'figure'),
      Output('user-details-card', 'children')],
-    [Input('student-selector', 'value')],
+    [Input('student-selector', 'value'),
+     Input('performance-year-filter', 'value')],  # Add year filter
     [State('student-data-store', 'data')]
 )
-def update_user_performance(selected_username, student_data_store):
+def update_user_performance(selected_username, selected_year, student_data_store):
     if not selected_username:
-        empty_fig = go.Figure()
-        empty_card = html.Div("Please select a student")
-        return empty_fig, empty_fig, empty_card
+        return go.Figure(), go.Figure(), html.Div("Please select a student")
 
     users_df, activity_df = load_data()
     student_data = pd.DataFrame(student_data_store.get('student_data', []))
+
+    # Apply year filter
+    if selected_year != 'All' and 'Year' in student_data.columns:
+        student_data = student_data[student_data['Year'] == selected_year]
+    if selected_year != 'All' and 'date' in activity_df.columns:
+        activity_df = activity_df[activity_df['date'].dt.year == int(selected_year)]
     user_data = users_df[users_df['Username'] == selected_username]
     user_activity = activity_df[activity_df['username'] == selected_username]
     student_info = student_data[student_data['username'] == selected_username]
@@ -1116,12 +1132,25 @@ def create_user_details_card(user_data, student_info, streak_info, last_week_gro
 
 @app.callback(
     [Output('inactive-students-chart', 'figure')],
-    [Input('activity-dept-filter', 'value')],
+    [Input('activity-dept-filter', 'value'),
+     Input('activity-year-filter', 'value')],  # Add year filter
     [State('student-data-store', 'data')]
 )
-def update_activity_trends(selected_dept, student_data_store):
+def update_activity_trends(selected_dept, selected_year, student_data_store):
     _, activity_df = load_data()
     student_data = pd.DataFrame(student_data_store.get('student_data', []))
+
+    # Apply department filter
+    if selected_dept != 'All':
+        student_data = student_data[student_data['Department'] == selected_dept]
+
+    # Apply year filter
+    if selected_year != 'All' and 'Year' in student_data.columns:
+        student_data = student_data[student_data['Year'] == selected_year]
+    if selected_year != 'All' and 'date' in activity_df.columns:
+        activity_df = activity_df[activity_df['date'].dt.year == int(selected_year)]
+
+    # Merge and process data
     merged_activity = pd.merge(activity_df, student_data, left_on='username', right_on='username', how='left')
 
     if selected_dept != 'All':
@@ -1172,16 +1201,23 @@ def create_inactive_students_chart(activity_df, student_data, selected_dept):
     [Input("download-btn", "n_clicks"),
      Input("download-month-btn", "n_clicks")],
     [State("download-dept-filter", "value"),
+     State("download-year-filter", "value"),  # Add year filter
      State("student-data-store", "data")],
     prevent_initial_call=True
 )
-def generate_excel(n_clicks_7days, n_clicks_month, selected_dept, student_data_store):
+def generate_excel(n_clicks_7days, n_clicks_month, selected_dept, selected_year, student_data_store):
     ctx = dash.callback_context
     if not ctx.triggered:
         return dash.no_update
 
     button_id = ctx.triggered[0]['prop_id'].split('.')[0]
     student_data = pd.DataFrame(student_data_store.get('student_data', []))
+    if selected_dept != 'All':
+        student_data = student_data[student_data['Department'] == selected_dept]
+
+    # Apply year filter
+    if selected_year != 'All' and 'Year' in student_data.columns:
+        student_data = student_data[student_data['Year'] == selected_year]
 
     if selected_dept != 'All':
         student_data = student_data[student_data['Department'] == selected_dept].copy()
