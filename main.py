@@ -52,8 +52,8 @@ def is_year_in_range(year_range, target_year):
 
 
 # Hardcoded credentials
-VALID_USERNAME = "eecleetcode"
-VALID_PASSWORD = "leetcode@eec"
+VALID_USERNAME = "eec"
+VALID_PASSWORD = "eec"
 
 
 def authenticate_user(username, password):
@@ -268,15 +268,37 @@ def process_data(users_df, activity_df):
     Output("tab-content", "children"),
     [Input("tabs", "active_tab"),
      Input("data-loaded-flag", "data"),
-     Input("student-data-store", "data")]
+     Input("student-data-store", "data")],
 )
 def render_tab_content(active_tab, data_loaded, student_data_store):
     if not data_loaded:
         return dbc.Alert("Please upload a student data CSV file and click 'Fetch Data' to load the dashboard.",
                          color="info")
 
+    # Dynamically get the year filter value from the active tab
+    ctx = dash.callback_context
+    selected_year = "All"  # Default value if no year filter is found
+
+    if active_tab == "leaderboard":
+        selected_year = ctx.states.get("leaderboard-year-filter.value", "All")
+    elif active_tab == "user-performance":
+        selected_year = ctx.states.get("performance-year-filter.value", "All")
+    elif active_tab == "difficulty-analysis":
+        selected_year = ctx.states.get("difficulty-year-filter.value", "All")
+    elif active_tab == "activity-trends":
+        selected_year = ctx.states.get("activity-year-filter.value", "All")
+    elif active_tab == "download-datasheet":
+        selected_year = ctx.states.get("download-year-filter.value", "All")
+
+    # Load and filter data
     users_df, activity_df = load_data()
     student_data = pd.DataFrame(student_data_store.get('student_data', [])).copy()
+
+    if selected_year != 'All' and 'Year' in student_data.columns:
+        student_data = student_data[student_data['Year'] == selected_year]
+
+    if selected_year != 'All' and 'date' in activity_df.columns:
+        activity_df = activity_df[activity_df['date'].dt.year == int(selected_year)]
 
     ctx = callback_context
     if not ctx.triggered:
@@ -385,7 +407,7 @@ def render_tab_content(active_tab, data_loaded, student_data_store):
             dbc.Col([
                 html.Label("Filter by Year:"),
                 dcc.Dropdown(
-                    id='year-filter',
+                    id='leaderboard-year-filter',
                     options=[{'label': 'All', 'value': 'All'}], 
                     value='All',
                     clearable=False,
@@ -422,6 +444,18 @@ def render_tab_content(active_tab, data_loaded, student_data_store):
                     clearable=False,
                     className="mb-3"
                 ),
+                html.Label("Select Year:"),
+                dcc.Dropdown(
+                    id='performance-year-filter',
+                    options=[{'label': 'All', 'value': 'All'}],
+                    value='All',
+                    clearable=False,
+                    className="mb-3"
+                )
+            ], width=12)
+        ]),
+        dbc.Row([
+            dbc.Col([
                 html.Label("Select Student:"),
                 dcc.Dropdown(
                     id='student-selector',
@@ -454,7 +488,17 @@ def render_tab_content(active_tab, data_loaded, student_data_store):
                     clearable=False,
                     className="mb-3"
                 )
-            ], width=12)
+            ], width=6),
+            dbc.Col([
+                html.Label("Filter by Year:"),
+                dcc.Dropdown(
+                    id='difficulty-year-filter',
+                    options=[{'label': 'All', 'value': 'All'}],
+                    value='All',
+                    clearable=False,
+                    className="mb-3"
+                )
+            ], width=6)
         ]),
         dbc.Row([
             dbc.Col(dcc.Graph(id='difficulty-avg-chart'), width=6),
@@ -479,7 +523,17 @@ def render_tab_content(active_tab, data_loaded, student_data_store):
                     clearable=False,
                     className="mb-3"
                 )
-            ], width=12)
+            ], width=6),
+            dbc.Col([
+                html.Label("Filter by Year:"),
+                dcc.Dropdown(
+                    id='activity-year-filter',
+                    options=[{'label': 'All', 'value': 'All'}],
+                    value='All',
+                    clearable=False,
+                    className="mb-3"
+                )
+            ], width=6)
         ]),
         dbc.Row([
             dbc.Col(dcc.Graph(id='inactive-students-chart'), width=12)
@@ -500,7 +554,17 @@ def render_tab_content(active_tab, data_loaded, student_data_store):
                     clearable=False,
                     className="mb-3"
                 )
-            ], width=12)
+            ], width=6),
+            dbc.Col([
+                html.Label("Filter by Year:"),
+                dcc.Dropdown(
+                    id='download-year-filter',
+                    options=[{'label': 'All', 'value': 'All'}],
+                    value='All',
+                    clearable=False,
+                    className="mb-3"
+                )
+            ], width=6)
         ]),
         dbc.Row([
             dbc.Col([
@@ -530,7 +594,7 @@ def render_tab_content(active_tab, data_loaded, student_data_store):
     [Output('top-3-chart', 'figure'),
      Output('full-leaderboard', 'children')],
     [Input('leaderboard-dept-filter', 'value'),
-     Input('year-filter', 'value')],
+     Input('leaderboard-year-filter', 'value')],
     [State('student-data-store', 'data')]
 )
 def update_leaderboard(selected_dept, selected_year, student_data_store):
@@ -617,24 +681,70 @@ def create_top_3_chart(users_df):
     return fig
 
 
+
 @app.callback(
-    Output('year-filter', 'options'),
+    Output('leaderboard-year-filter', 'options'),
     [Input('student-data-store', 'data')]
 )
-def populate_year_options(student_data_store):
-    # Load student data from the store
+def populate_leaderboard_year_options(student_data_store):
     student_data = pd.DataFrame(student_data_store.get('student_data', []))
-    
-    # Check if 'Year' column exists
     if 'Year' not in student_data.columns:
-        print("Warning: 'Year' column not found in student data")
-        return [{'label': 'All', 'value': 'All'}]  # Provide "All" as the only option if no year data exists.
+        return [{'label': 'All', 'value': 'All'}]
 
-    # Generate unique years and add "All" as the default option
     unique_years = ['All'] + sorted(student_data['Year'].unique().tolist())
-    options = [{'label': year, 'value': year} for year in unique_years]
+    return [{'label': year, 'value': year} for year in unique_years]
 
-    return options
+
+@app.callback(
+    Output('performance-year-filter', 'options'),
+    [Input('student-data-store', 'data')]
+)
+def populate_performance_year_options(student_data_store):
+    student_data = pd.DataFrame(student_data_store.get('student_data', []))
+    if 'Year' not in student_data.columns:
+        return [{'label': 'All', 'value': 'All'}]
+
+    unique_years = ['All'] + sorted(student_data['Year'].unique().tolist())
+    return [{'label': year, 'value': year} for year in unique_years]
+
+
+@app.callback(
+    Output('difficulty-year-filter', 'options'),
+    [Input('student-data-store', 'data')]
+)
+def populate_difficulty_year_options(student_data_store):
+    student_data = pd.DataFrame(student_data_store.get('student_data', []))
+    if 'Year' not in student_data.columns:
+        return [{'label': 'All', 'value': 'All'}]
+
+    unique_years = ['All'] + sorted(student_data['Year'].unique().tolist())
+    return [{'label': year, 'value': year} for year in unique_years]
+
+
+@app.callback(
+    Output('activity-year-filter', 'options'),
+    [Input('student-data-store', 'data')]
+)
+def populate_activity_year_options(student_data_store):
+    student_data = pd.DataFrame(student_data_store.get('student_data', []))
+    if 'Year' not in student_data.columns:
+        return [{'label': 'All', 'value': 'All'}]
+
+    unique_years = ['All'] + sorted(student_data['Year'].unique().tolist())
+    return [{'label': year, 'value': year} for year in unique_years]
+
+
+@app.callback(
+    Output('download-year-filter', 'options'),
+    [Input('student-data-store', 'data')]
+)
+def populate_download_year_options(student_data_store):
+    student_data = pd.DataFrame(student_data_store.get('student_data', []))
+    if 'Year' not in student_data.columns:
+        return [{'label': 'All', 'value': 'All'}]
+
+    unique_years = ['All'] + sorted(student_data['Year'].unique().tolist())
+    return [{'label': year, 'value': year} for year in unique_years]
 
 
 def create_full_leaderboard(users_df):
@@ -686,7 +796,7 @@ def create_full_leaderboard(users_df):
     Output("download-leaderboard", "data"),
     [Input("download-leaderboard-btn", "n_clicks")],  # Only listen to the button click
     [State("leaderboard-dept-filter", "value"),
-     State("year-filter", "value"),
+     State("leaderboard-year-filter", "value"),
      State("student-data-store", "data")],
     prevent_initial_call=True  # Prevent the callback from firing on initial load
 )
@@ -747,12 +857,23 @@ def download_full_leaderboard(n_clicks, selected_dept, selected_year, student_da
     [Output('difficulty-avg-chart', 'figure'),
      Output('difficulty-distribution', 'figure'),
      Output('hard-solvers', 'figure')],
-    [Input('difficulty-dept-filter', 'value')],
+    [Input('difficulty-dept-filter', 'value'),
+     Input('difficulty-year-filter', 'value')],  # Add year filter
     [State('student-data-store', 'data')]
 )
-def update_difficulty_analysis(selected_dept, student_data_store):
+def update_difficulty_analysis(selected_dept, selected_year, student_data_store):
     users_df, _ = load_data()
     student_data = pd.DataFrame(student_data_store.get('student_data', []))
+
+    # Apply department filter
+    if selected_dept != 'All':
+        student_data = student_data[student_data['Department'] == selected_dept]
+
+    # Apply year filter
+    if selected_year != 'All' and 'Year' in student_data.columns:
+        student_data = student_data[student_data['Year'] == selected_year]
+
+    # Merge and process data
     merged_df = pd.merge(users_df, student_data, left_on='Username', right_on='username', how='left')
 
     if selected_dept != 'All':
@@ -855,17 +976,22 @@ def update_student_dropdown(selected_dept, student_data_store):
     [Output('user-problems-chart', 'figure'),
      Output('user-activity-trend', 'figure'),
      Output('user-details-card', 'children')],
-    [Input('student-selector', 'value')],
+    [Input('student-selector', 'value'),
+     Input('performance-year-filter', 'value')],  # Add year filter
     [State('student-data-store', 'data')]
 )
-def update_user_performance(selected_username, student_data_store):
+def update_user_performance(selected_username, selected_year, student_data_store):
     if not selected_username:
-        empty_fig = go.Figure()
-        empty_card = html.Div("Please select a student")
-        return empty_fig, empty_fig, empty_card
+        return go.Figure(), go.Figure(), html.Div("Please select a student")
 
     users_df, activity_df = load_data()
     student_data = pd.DataFrame(student_data_store.get('student_data', []))
+
+    # Apply year filter
+    if selected_year != 'All' and 'Year' in student_data.columns:
+        student_data = student_data[student_data['Year'] == selected_year]
+    if selected_year != 'All' and 'date' in activity_df.columns:
+        activity_df = activity_df[activity_df['date'].dt.year == int(selected_year)]
     user_data = users_df[users_df['Username'] == selected_username]
     user_activity = activity_df[activity_df['username'] == selected_username]
     student_info = student_data[student_data['username'] == selected_username]
@@ -1053,12 +1179,25 @@ def create_user_details_card(user_data, student_info, streak_info, last_week_gro
 
 @app.callback(
     [Output('inactive-students-chart', 'figure')],
-    [Input('activity-dept-filter', 'value')],
+    [Input('activity-dept-filter', 'value'),
+     Input('activity-year-filter', 'value')],  # Add year filter
     [State('student-data-store', 'data')]
 )
-def update_activity_trends(selected_dept, student_data_store):
+def update_activity_trends(selected_dept, selected_year, student_data_store):
     _, activity_df = load_data()
     student_data = pd.DataFrame(student_data_store.get('student_data', []))
+
+    # Apply department filter
+    if selected_dept != 'All':
+        student_data = student_data[student_data['Department'] == selected_dept]
+
+    # Apply year filter
+    if selected_year != 'All' and 'Year' in student_data.columns:
+        student_data = student_data[student_data['Year'] == selected_year]
+    if selected_year != 'All' and 'date' in activity_df.columns:
+        activity_df = activity_df[activity_df['date'].dt.year == int(selected_year)]
+
+    # Merge and process data
     merged_activity = pd.merge(activity_df, student_data, left_on='username', right_on='username', how='left')
 
     if selected_dept != 'All':
@@ -1109,16 +1248,23 @@ def create_inactive_students_chart(activity_df, student_data, selected_dept):
     [Input("download-btn", "n_clicks"),
      Input("download-month-btn", "n_clicks")],
     [State("download-dept-filter", "value"),
+     State("download-year-filter", "value"),  # Add year filter
      State("student-data-store", "data")],
     prevent_initial_call=True
 )
-def generate_excel(n_clicks_7days, n_clicks_month, selected_dept, student_data_store):
+def generate_excel(n_clicks_7days, n_clicks_month, selected_dept, selected_year, student_data_store):
     ctx = dash.callback_context
     if not ctx.triggered:
         return dash.no_update
 
     button_id = ctx.triggered[0]['prop_id'].split('.')[0]
     student_data = pd.DataFrame(student_data_store.get('student_data', []))
+    if selected_dept != 'All':
+        student_data = student_data[student_data['Department'] == selected_dept]
+
+    # Apply year filter
+    if selected_year != 'All' and 'Year' in student_data.columns:
+        student_data = student_data[student_data['Year'] == selected_year]
 
     if selected_dept != 'All':
         student_data = student_data[student_data['Department'] == selected_dept].copy()
