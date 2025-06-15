@@ -1,6 +1,0 @@
-user,role,email,password,department
-admin,admin,admin@eec.edu,admin123,ALL
-cse_hod,hod,cse.hod@eec.edu,cse123,CSE
-ece_hod,hod,ece.hod@eec.edu,ece123,ECE
-eee_hod,hod,eee.hod@eec.edu,eee123,EEE
-mech_hod,hod,mech.hod@eec.edu,mech123,MECH
